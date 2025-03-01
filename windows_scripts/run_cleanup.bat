@@ -1,9 +1,8 @@
 @echo off
-SETLOCAL EnableDelayedExpansion
+SETLOCAL
 
 REM Windows Temporary Files Cleanup Launcher
-REM This batch file downloads the PowerShell script from GitHub,
-REM bypasses execution policy restrictions, and runs the script.
+REM This batch file downloads the PowerShell script from GitHub and runs it
 
 echo =========================================
 echo Windows Temporary Files Cleanup Utility
@@ -19,19 +18,19 @@ if %errorLevel% neq 0 (
     exit /b 1
 )
 
-REM Create a unique temp directory
+REM Create a temporary directory
 set "TEMP_DIR=%TEMP%\TempCleanup_%RANDOM%"
 mkdir "%TEMP_DIR%" 2>nul
 
-REM Set script path and URL
+REM Set script paths and URL
 set "PS_SCRIPT=%TEMP_DIR%\cleanup.ps1"
 set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/temporary_files_cleanup.ps1"
 
 echo Downloading cleanup script...
 echo.
 
-REM Use PowerShell to download the file instead of curl
-powershell -Command "& { Invoke-WebRequest -Uri '%PS_URL%' -OutFile '%PS_SCRIPT%' }"
+REM Download the script using PowerShell
+powershell -Command "(New-Object Net.WebClient).DownloadFile('%PS_URL%', '%PS_SCRIPT%')"
 
 REM Check if download succeeded
 if not exist "%PS_SCRIPT%" (
@@ -45,30 +44,21 @@ if not exist "%PS_SCRIPT%" (
 echo PowerShell script successfully downloaded.
 echo.
 
-REM Display information about default parameters if none provided
+REM Display mode information
 if "%~1"=="" (
     echo No parameters specified - running with default settings (production mode).
-    echo Default settings:
-    echo - Windows Drive: C:
-    echo - Days to Keep: 0 (delete all temporary files regardless of age)
-    echo - Prefetch cleaning: Enabled
-    echo - Mode: Production (files will be deleted)
     echo.
-    
-    echo Executing with default parameters...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "& '%PS_SCRIPT%'"
 ) else (
-    echo Executing with provided parameters...
-    
-    REM Build the parameter string
-    set "params="
-    for %%a in (%*) do (
-        set "params=!params! '%%a'"
-    )
-    
-    REM Execute with parameters
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "& '%PS_SCRIPT%'%params%"
+    echo Running with custom parameters: %*
+    echo.
 )
+
+REM Directly execute the PowerShell script using -File mode
+echo Executing cleanup script...
+echo.
+
+REM This is the key part - using the simpler -File parameter approach
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %*
 
 REM Check exit code
 if %errorLevel% neq 0 (
