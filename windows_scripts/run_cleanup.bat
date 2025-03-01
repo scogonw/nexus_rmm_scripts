@@ -14,7 +14,6 @@ if %errorLevel% neq 0 (
     echo This script requires administrator privileges.
     echo Right-click on this file and select "Run as Administrator".
     echo.
-    pause
     exit /b 1
 )
 
@@ -41,27 +40,23 @@ if not exist "%PS_SCRIPT%" (
     echo Please check your internet connection and try again.
     echo.
     rmdir /s /q "%TEMP_DIR%" 2>nul
-    pause
     exit /b 1
 )
 
 echo PowerShell script successfully downloaded.
 echo.
 
-REM Parse command-line arguments to pass to the PowerShell script
+REM Pass through ALL command-line arguments directly to the PowerShell script
 set "PS_ARGS=%*"
 
-REM If no parameters specified, run with defaults (no additional parameters needed)
+REM If no parameters specified, simply inform user but continue with defaults
 if "%~1"=="" (
     echo No parameters specified - running with default settings (production mode).
-    echo.
     echo Default settings:
     echo - Windows Drive: C:
     echo - Days to Keep: 0 (delete all temporary files regardless of age)
     echo - Prefetch cleaning: Enabled
     echo - Mode: Production (files will be deleted)
-    echo.
-    echo To run in test mode, use: %~nx0 -TestMode
     echo.
 )
 
@@ -87,5 +82,4 @@ REM Clean up the downloaded script
 echo Cleaning up temporary files...
 rmdir /s /q "%TEMP_DIR%" 2>nul
 
-pause
 exit /b %errorLevel% 
