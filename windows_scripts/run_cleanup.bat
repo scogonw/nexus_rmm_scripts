@@ -76,4 +76,4 @@ echo Cleaning up temporary files...
 rd /s /q "%TEMP_DIR%" 2>nul
 
 ENDLOCAL
-exit /b %errorLevel% 
+exit /b %errorLevel%
