@@ -46,9 +46,6 @@ if not exist "%PS_SCRIPT%" (
 echo PowerShell script successfully downloaded.
 echo.
 
-REM Pass through ALL command-line arguments directly to the PowerShell script
-set "PS_ARGS=%*"
-
 REM If no parameters specified, simply inform user but continue with defaults
 if "%~1"=="" (
     echo No parameters specified - running with default settings (production mode).
@@ -58,14 +55,19 @@ if "%~1"=="" (
     echo - Prefetch cleaning: Enabled
     echo - Mode: Production (files will be deleted)
     echo.
+    
+    REM Run with no args
+    echo Executing cleanup script with execution policy bypass...
+    echo Command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
+    echo.
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
+) else (
+    REM Run with parameters
+    echo Executing cleanup script with execution policy bypass and parameters...
+    echo Command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %*
+    echo.
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %*
 )
-
-echo Executing cleanup script with execution policy bypass...
-echo Command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %PS_ARGS%
-echo.
-
-REM Run the PowerShell script with execution policy bypass
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %PS_ARGS%
 
 REM Check if the script executed successfully
 if %errorLevel% neq 0 (
