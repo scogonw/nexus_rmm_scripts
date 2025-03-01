@@ -45,7 +45,7 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 # Determine Windows and log paths
 $WindowsDrive = $WindowsDrive.TrimEnd("\:")
 if (!$WindowsDrive.EndsWith(":")) {
-    $WindowsDrive = "$WindowsDrive:"
+    $WindowsDrive = "${WindowsDrive}:"
 }
 $WindowsPath = "$WindowsDrive\Windows"
 if (-not (Test-Path -Path $WindowsPath)) {
