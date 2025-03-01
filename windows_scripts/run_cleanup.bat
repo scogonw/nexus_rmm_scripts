@@ -49,7 +49,7 @@ if "%~1"=="" (
     echo No parameters specified - running with default settings (production mode).
     echo.
 ) else (
-    echo Running with custom parameters: %*
+    echo Running with custom parameters: "%*"
     echo.
 )
 
@@ -58,7 +58,7 @@ echo Executing cleanup script...
 echo.
 
 REM This is the key part - using the simpler -File parameter approach
-powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %*
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" "%*"
 
 REM Check exit code
 if %errorLevel% neq 0 (
