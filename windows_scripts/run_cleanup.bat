@@ -49,39 +49,22 @@ echo PowerShell script successfully downloaded.
 echo.
 
 REM Parse command-line arguments to pass to the PowerShell script
-set "PS_ARGS="
+set "PS_ARGS=%*"
+
+REM If no parameters specified, run with defaults (no additional parameters needed)
 if "%~1"=="" (
-    echo No parameters specified. 
+    echo No parameters specified - running with default settings (production mode).
     echo.
-    echo Available options:
-    echo   -TestMode           : Test only, no files will be deleted
-    echo   -WindowsDrive X:    : Specify Windows drive (default is C:)
-    echo   -DaysToKeep N       : Keep files newer than N days
-    echo   -SkipPrefetch       : Skip cleaning prefetch folder
-    echo   -LogPath "path"     : Custom log path
+    echo Default settings:
+    echo - Windows Drive: C:
+    echo - Days to Keep: 0 (delete all temporary files regardless of age)
+    echo - Prefetch cleaning: Enabled
+    echo - Mode: Production (files will be deleted)
     echo.
-    echo Example usage:
-    echo   %~nx0 -TestMode
-    echo   %~nx0 -WindowsDrive D: -DaysToKeep 7
+    echo To run in test mode, use: %~nx0 -TestMode
     echo.
-    
-    choice /C YNT /N /M "Run with: [Y]No parameters [N]Quit [T]Test mode "
-    
-    if %errorLevel%==1 goto execute
-    if %errorLevel%==2 (
-        echo Cleaning up temporary files...
-        rmdir /s /q "%TEMP_DIR%" 2>nul
-        exit /b 0
-    )
-    if %errorLevel%==3 (
-        set "PS_ARGS=-TestMode"
-        goto execute
-    )
-) else (
-    set "PS_ARGS=%*"
 )
 
-:execute
 echo Executing cleanup script with execution policy bypass...
 echo Command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %PS_ARGS%
 echo.
