@@ -44,6 +44,9 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # Determine Windows and log paths
 $WindowsDrive = $WindowsDrive.TrimEnd("\:")
+if (!$WindowsDrive.EndsWith(":")) {
+    $WindowsDrive = "$WindowsDrive:"
+}
 $WindowsPath = "$WindowsDrive\Windows"
 if (-not (Test-Path -Path $WindowsPath)) {
     Write-Warning "Windows folder not found at $WindowsPath. Please specify the correct drive with -WindowsDrive parameter."
