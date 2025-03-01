@@ -42,12 +42,13 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit 1
 }
 
-# Determine Windows and log paths
-$WindowsDrive = $WindowsDrive.TrimEnd("\:")
-if (!$WindowsDrive.EndsWith(":")) {
-    $WindowsDrive = "${WindowsDrive}:"
-}
-$WindowsPath = "$WindowsDrive\Windows"
+# Determine Windows and log paths - Fix for the colon issue
+# Clean up drive letter format - extract just the drive letter
+$DriveLetter = $WindowsDrive.Trim() -replace '[\\:]+$', '' -replace '^([a-zA-Z]).*$', '$1'
+# Construct proper Windows path with drive letter
+$WindowsPath = $DriveLetter + ":\Windows"
+
+# Check if Windows path exists
 if (-not (Test-Path -Path $WindowsPath)) {
     Write-Warning "Windows folder not found at $WindowsPath. Please specify the correct drive with -WindowsDrive parameter."
     exit 1
@@ -55,7 +56,7 @@ if (-not (Test-Path -Path $WindowsPath)) {
 
 # Set up logging
 if (-not $LogPath) {
-    $LogPath = "$WindowsPath\Logs"
+    $LogPath = $DriveLetter + ":\Windows\Logs"
 }
 
 if (-not (Test-Path -Path $LogPath)) {
@@ -76,7 +77,7 @@ $TotalSpaceFreed = 0
 $LocationStats = @{}
 
 # Get initial disk space on Windows drive
-$InitialFreeSpace = (Get-PSDrive $WindowsDrive.Replace(":", "") | Select-Object -ExpandProperty Free)
+$InitialFreeSpace = (Get-PSDrive $DriveLetter | Select-Object -ExpandProperty Free)
 
 function Write-Log {
     param (
@@ -238,7 +239,7 @@ else {
 }
 
 # 3. Clean User Temp folders
-$userProfiles = Get-ChildItem -Path "$WindowsDrive\Users" -Directory -ErrorAction SilentlyContinue | 
+$userProfiles = Get-ChildItem -Path "$DriveLetter`:\Users" -Directory -ErrorAction SilentlyContinue | 
                 Where-Object { $_.Name -ne "Public" -and $_.Name -ne "Default" -and $_.Name -ne "Default User" }
 
 foreach ($profile in $userProfiles) {
@@ -315,7 +316,7 @@ $FinalFreeSpace = 0
 $TotalDiskSpaceFreed = 0
 
 if (-not $TestMode) {
-    $FinalFreeSpace = (Get-PSDrive $WindowsDrive.Replace(":", "") | Select-Object -ExpandProperty Free)
+    $FinalFreeSpace = (Get-PSDrive $DriveLetter | Select-Object -ExpandProperty Free)
     $TotalDiskSpaceFreed = $FinalFreeSpace - $InitialFreeSpace
 }
 
