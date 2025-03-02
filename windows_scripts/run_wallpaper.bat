@@ -1,5 +1,5 @@
 @echo off
-SETLOCAL
+SETLOCAL EnableDelayedExpansion
 
 echo =========================================
 echo Windows Wallpaper Setter Utility
@@ -10,17 +10,22 @@ REM Check if running as administrator
 net session >nul 2>&1
 if %errorLevel% neq 0 (
     echo This script requires administrator privileges.
-    echo Right-click on this file and select "Run as Administrator".
-    echo.
-    exit /b 1
+    echo Attempting to elevate privileges...
+    
+    REM Self-elevate the script if not already admin
+    powershell -Command "Start-Process -FilePath '%~dpnx0' -ArgumentList '%~1', '%~2' -Verb RunAs"
+    exit /b
 )
 
-REM Create a temporary directory
-set "TEMP_DIR=%TEMP%\WallpaperSetter_%RANDOM%"
+echo Running with administrator privileges...
+
+REM Create a temporary directory with a more unique name
+set "TEMP_DIR=%TEMP%\WallpaperSetter_%RANDOM%_%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%"
 mkdir "%TEMP_DIR%" 2>nul
 
 REM Set script paths and URL
 set "PS_SCRIPT=%TEMP_DIR%\set_wallpaper.ps1"
+set "PS_LOG=%TEMP_DIR%\wallpaper_log.txt"
 set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/set_wallpaper.ps1"
 
 echo Downloading wallpaper setter script...
@@ -71,17 +76,54 @@ if not "%~2"=="" (
 )
 echo.
 
-REM Execute the PowerShell script with elevated privileges and execution policy bypass
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& {Start-Process PowerShell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"%PS_SCRIPT%\" -ImageFile \"%~1\" %STYLE_PARAM%' -Verb RunAs -Wait}"
+REM Create a wrapper script to ensure proper execution
+set "WRAPPER_SCRIPT=%TEMP_DIR%\run_wallpaper_wrapper.ps1"
+echo $ErrorActionPreference = 'Continue' > "%WRAPPER_SCRIPT%"
+echo $VerbosePreference = 'Continue' >> "%WRAPPER_SCRIPT%"
+echo try { >> "%WRAPPER_SCRIPT%"
+echo     Write-Verbose "Starting wallpaper setting process..." >> "%WRAPPER_SCRIPT%"
+echo     Write-Verbose "PowerShell Version: $($PSVersionTable.PSVersion)" >> "%WRAPPER_SCRIPT%"
+echo     Write-Verbose "Script path: '%PS_SCRIPT%'" >> "%WRAPPER_SCRIPT%"
+echo     Write-Verbose "Image path: '%~1'" >> "%WRAPPER_SCRIPT%"
+echo     Write-Verbose "Style parameter: '%STYLE_PARAM%'" >> "%WRAPPER_SCRIPT%"
+echo     $scriptOutput = ^& '%PS_SCRIPT%' -ImageFile '%~1' %STYLE_PARAM% -Verbose *>&1 >> "%WRAPPER_SCRIPT%"
+echo     $scriptOutput | ForEach-Object { Write-Verbose $_ } >> "%WRAPPER_SCRIPT%"
+echo     if ($LASTEXITCODE -ne 0) { >> "%WRAPPER_SCRIPT%"
+echo         throw "PowerShell script execution failed with exit code $LASTEXITCODE" >> "%WRAPPER_SCRIPT%"
+echo     } >> "%WRAPPER_SCRIPT%"
+echo     Write-Verbose "Wallpaper set successfully!" >> "%WRAPPER_SCRIPT%"
+echo } catch { >> "%WRAPPER_SCRIPT%"
+echo     Write-Error "Error: $_" >> "%WRAPPER_SCRIPT%"
+echo     exit 1 >> "%WRAPPER_SCRIPT%"
+echo } >> "%WRAPPER_SCRIPT%"
 
-if %errorLevel% neq 0 (
-    echo The wallpaper setter script encountered an error (Exit code: %errorLevel%)
+echo Executing PowerShell script...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%WRAPPER_SCRIPT%" 2>"%PS_LOG%"
+set PS_EXIT_CODE=%errorLevel%
+
+type "%PS_LOG%"
+
+if %PS_EXIT_CODE% neq 0 (
+    echo =========================================
+    echo ERROR: The wallpaper setter script encountered an error (Exit code: %PS_EXIT_CODE%)
+    echo See detailed log below:
+    type "%PS_LOG%"
+    echo =========================================
+    echo For technical support, the log file is available at: %PS_LOG%
 ) else (
-    echo Wallpaper set successfully.
+    echo Wallpaper set successfully!
+    echo To verify, check your desktop background
 )
 
-echo Cleaning up temporary files...
-rd /s /q "%TEMP_DIR%" 2>nul
+echo.
+echo Keep temporary files for troubleshooting? (Y/N)
+choice /c YN /t 10 /d N /m "Auto-delete in 10 seconds: "
+if %errorLevel% equ 2 (
+    echo Cleaning up temporary files...
+    rd /s /q "%TEMP_DIR%" 2>nul
+) else (
+    echo Temporary files kept at: %TEMP_DIR%
+)
 
 ENDLOCAL
-exit /b %errorLevel% 
+exit /b %PS_EXIT_CODE% 
