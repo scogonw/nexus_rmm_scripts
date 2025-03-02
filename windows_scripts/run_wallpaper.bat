@@ -1,141 +1,30 @@
 @echo off
 SETLOCAL EnableDelayedExpansion
 
-echo =========================================
-echo Windows Wallpaper Setter Utility
-echo =========================================
-echo.
-
-echo [DEBUG] Script started at: %date% %time%
-echo [DEBUG] Running as user: %USERNAME%
-echo [DEBUG] Computer name: %COMPUTERNAME%
-
-REM Check if running as administrator
-net session >nul 2>&1
-if %errorLevel% neq 0 (
-    echo [DEBUG] Not running as admin, attempting elevation...
-    echo This script requires administrator privileges.
-    echo Attempting to elevate privileges...
-    
-    REM Self-elevate the script if not already admin
-    powershell -Command "Start-Process -FilePath '%~dpnx0' -ArgumentList '%~1', '%~2' -Verb RunAs"
-    echo [DEBUG] Elevation command executed with exit code: !errorLevel!
-    exit /b
-)
-
-echo Running with administrator privileges...
-echo [DEBUG] Admin check passed
-
-REM Create a temporary directory with a more unique name
-set "TEMP_DIR=%TEMP%\WallpaperSetter_%RANDOM%"
-echo [DEBUG] Temp directory path: %TEMP_DIR%
-echo Creating temporary directory: %TEMP_DIR%
-mkdir "%TEMP_DIR%" 2>nul
-echo [DEBUG] Directory creation exit code: !errorLevel!
-
-REM Set script paths and URL
-set "PS_SCRIPT=%TEMP_DIR%\set_wallpaper.ps1"
-set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/set_wallpaper.ps1"
-echo [DEBUG] PowerShell script will be saved to: %PS_SCRIPT%
-
-echo Downloading wallpaper setter script...
-echo [DEBUG] Download URL: %PS_URL%
-
-REM Download the script
-powershell -Command "Invoke-WebRequest -Uri '%PS_URL%' -OutFile '%PS_SCRIPT%'"
-if not exist "%PS_SCRIPT%" (
-    echo [DEBUG] DOWNLOAD FAILED - File does not exist after download attempt
-    echo ERROR: Failed to download the PowerShell script.
-    echo Please check your internet connection and try again.
-    goto :cleanup
-)
-
-echo PowerShell script successfully downloaded.
-
-REM Check if the downloaded file has content
-for %%I in ("%PS_SCRIPT%") do set FILE_SIZE=%%~zI
-if %FILE_SIZE% EQU 0 (
-    echo [DEBUG] WARNING: Downloaded script is empty
-    echo ERROR: Downloaded script is empty. Please try again.
-    goto :cleanup
-)
-echo [DEBUG] Script file size: %FILE_SIZE% bytes
-
-REM Check if an image file was provided
 if "%~1"=="" (
-    echo [DEBUG] No image file parameter provided
     echo ERROR: No image file specified.
     echo Usage: %~nx0 [path_to_image] [style]
     echo Example: %~nx0 C:\wallpaper.jpg Stretch
     echo Available styles: Fill, Fit, Stretch, Tile, Center, Span (default)
-    goto :cleanup
+    exit /b 1
 )
 
-echo [DEBUG] Image parameter provided: %~1
+set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/set_wallpaper.ps1"
+set "PS_SCRIPT=%TEMP%\set_wallpaper.ps1"
 
-REM Check if the specified image file exists
-if not exist "%~1" (
-    echo [DEBUG] Specified image file not found
-    echo ERROR: The specified image file does not exist: %~1
-    echo Please provide a valid path to an image file.
-    goto :cleanup
+powershell -Command "& { Invoke-WebRequest -Uri '%PS_URL%' -OutFile '%PS_SCRIPT%' }"
+
+if not exist "%PS_SCRIPT%" (
+    echo ERROR: Failed to download the PowerShell script.
+    exit /b 1
 )
 
-echo [DEBUG] Image file exists
-for %%I in ("%~1") do set IMAGE_SIZE=%%~zI
-echo [DEBUG] Image file size: !IMAGE_SIZE! bytes
-
-REM Determine if a style was specified
-set "STYLE_PARAM="
-if not "%~2"=="" (
-    set "STYLE_PARAM=-Style %~2"
-    echo [DEBUG] Style parameter provided: %~2
+if "%~2"=="" (
+    powershell -Command "Start-Process PowerShell -ArgumentList '-ExecutionPolicy Bypass -Command ""& ''%PS_SCRIPT%'' -ImageFile ''%~1''"" ' -Verb RunAs"
 ) else (
-    echo [DEBUG] No style parameter, using default
+    powershell -Command "Start-Process PowerShell -ArgumentList '-ExecutionPolicy Bypass -Command ""& ''%PS_SCRIPT%'' -ImageFile ''%~1'' -Style ''%~2''"" ' -Verb RunAs"
 )
 
-echo Setting wallpaper to: %~1
-if not "%~2"=="" (
-    echo Using style: %~2
-) else (
-    echo Using default style (Span)
-)
-echo.
-
-echo [DEBUG] Starting PowerShell script execution...
-echo [DEBUG] Command to execute: powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" -ImageFile "%~1" %STYLE_PARAM%
-
-REM Execute the PowerShell script with error handling
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$Host.UI.RawUI.WindowTitle = 'Setting Wallpaper'; ^
-     $ErrorActionPreference = 'Continue'; ^
-     Write-Host '[DEBUG] PowerShell started, executing script...'; ^
-     $result = & '%PS_SCRIPT%' -ImageFile '%~1' %STYLE_PARAM%; ^
-     $exitCode = $LASTEXITCODE; ^
-     Write-Host '[DEBUG] Script execution completed.'; ^
-     exit $exitCode"
-
-set PS_EXIT_CODE=%errorLevel%
-
-echo [DEBUG] PowerShell execution completed with exit code: %PS_EXIT_CODE%
-
-if %PS_EXIT_CODE% EQU 0 (
-    echo =========================================
-    echo Wallpaper set successfully!
-    echo To verify, check your desktop background
-    echo =========================================
-) else (
-    echo =========================================
-    echo ERROR: Failed to set wallpaper (Exit code: %PS_EXIT_CODE%)
-    echo =========================================
-)
-
-:cleanup
-echo.
-echo [DEBUG] Performing cleanup...
-echo Cleaning up temporary files...
-rd /s /q "%TEMP_DIR%" 2>nul
-echo [DEBUG] Script completed at: %date% %time%
-
-ENDLOCAL
-exit /b %PS_EXIT_CODE% 
+timeout /t 2 > nul
+del "%PS_SCRIPT%" 2>nul
+exit /b 0
