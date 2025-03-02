@@ -41,10 +41,8 @@ echo [DEBUG] PowerShell script will be saved to: %PS_SCRIPT%
 echo Downloading wallpaper setter script...
 echo [DEBUG] Download URL: %PS_URL%
 
-REM Simple command that's less likely to have issues
+REM Download the script
 powershell -Command "Invoke-WebRequest -Uri '%PS_URL%' -OutFile '%PS_SCRIPT%'"
-
-REM Verify download succeeded
 if not exist "%PS_SCRIPT%" (
     echo [DEBUG] DOWNLOAD FAILED - File does not exist after download attempt
     echo ERROR: Failed to download the PowerShell script.
@@ -53,9 +51,15 @@ if not exist "%PS_SCRIPT%" (
 )
 
 echo PowerShell script successfully downloaded.
-echo [DEBUG] Confirming script content exists...
-powershell -Command "if((Get-Content '%PS_SCRIPT%' -ErrorAction SilentlyContinue).Length -gt 0){Write-Host '[DEBUG] Script contains content'} else {Write-Host '[DEBUG] WARNING: Script file is empty'}"
-echo.
+
+REM Check if the downloaded file has content
+for %%I in ("%PS_SCRIPT%") do set FILE_SIZE=%%~zI
+if %FILE_SIZE% EQU 0 (
+    echo [DEBUG] WARNING: Downloaded script is empty
+    echo ERROR: Downloaded script is empty. Please try again.
+    goto :cleanup
+)
+echo [DEBUG] Script file size: %FILE_SIZE% bytes
 
 REM Check if an image file was provided
 if "%~1"=="" (
@@ -78,7 +82,8 @@ if not exist "%~1" (
 )
 
 echo [DEBUG] Image file exists
-powershell -Command "Write-Host '[DEBUG] Image details:' + (Get-Item '%~1' | Select-Object FullName, Length, LastWriteTime | Format-List | Out-String)"
+for %%I in ("%~1") do set IMAGE_SIZE=%%~zI
+echo [DEBUG] Image file size: !IMAGE_SIZE! bytes
 
 REM Determine if a style was specified
 set "STYLE_PARAM="
@@ -97,18 +102,22 @@ if not "%~2"=="" (
 )
 echo.
 
-echo IMPORTANT: Executing PowerShell script...
+echo [DEBUG] Starting PowerShell script execution...
+echo [DEBUG] Command to execute: powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" -ImageFile "%~1" %STYLE_PARAM%
 
-REM *** DIRECT EXECUTION - SIMPLEST POSSIBLE APPROACH ***
-REM This is the most likely to work without any issues
-echo Command: powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" -ImageFile "%~1" %STYLE_PARAM% 
+REM Execute the PowerShell script with error handling
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$Host.UI.RawUI.WindowTitle = 'Setting Wallpaper'; ^
+     $ErrorActionPreference = 'Continue'; ^
+     Write-Host '[DEBUG] PowerShell started, executing script...'; ^
+     $result = & '%PS_SCRIPT%' -ImageFile '%~1' %STYLE_PARAM%; ^
+     $exitCode = $LASTEXITCODE; ^
+     Write-Host '[DEBUG] Script execution completed.'; ^
+     exit $exitCode"
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" -ImageFile "%~1" %STYLE_PARAM%
 set PS_EXIT_CODE=%errorLevel%
 
-echo.
-echo PowerShell execution completed with exit code: %PS_EXIT_CODE%
-echo.
+echo [DEBUG] PowerShell execution completed with exit code: %PS_EXIT_CODE%
 
 if %PS_EXIT_CODE% EQU 0 (
     echo =========================================
@@ -123,6 +132,7 @@ if %PS_EXIT_CODE% EQU 0 (
 
 :cleanup
 echo.
+echo [DEBUG] Performing cleanup...
 echo Cleaning up temporary files...
 rd /s /q "%TEMP_DIR%" 2>nul
 echo [DEBUG] Script completed at: %date% %time%
