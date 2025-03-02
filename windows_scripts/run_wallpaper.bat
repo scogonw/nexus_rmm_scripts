@@ -40,15 +40,16 @@ echo [DEBUG] PowerShell script will be saved to: %PS_SCRIPT%
 
 echo Downloading wallpaper setter script...
 echo [DEBUG] Download URL: %PS_URL%
-powershell -Command "(New-Object Net.WebClient).DownloadFile('%PS_URL%', '%PS_SCRIPT%'); if(Test-Path '%PS_SCRIPT%'){Write-Host '[DEBUG] File size: ' + (Get-Item '%PS_SCRIPT%').Length + ' bytes'}"
 
+REM Simple command that's less likely to have issues
+powershell -Command "Invoke-WebRequest -Uri '%PS_URL%' -OutFile '%PS_SCRIPT%'"
+
+REM Verify download succeeded
 if not exist "%PS_SCRIPT%" (
     echo [DEBUG] DOWNLOAD FAILED - File does not exist after download attempt
     echo ERROR: Failed to download the PowerShell script.
     echo Please check your internet connection and try again.
-    echo.
-    rd /s /q "%TEMP_DIR%" 2>nul
-    exit /b 1
+    goto :cleanup
 )
 
 echo PowerShell script successfully downloaded.
@@ -63,9 +64,7 @@ if "%~1"=="" (
     echo Usage: %~nx0 [path_to_image] [style]
     echo Example: %~nx0 C:\wallpaper.jpg Stretch
     echo Available styles: Fill, Fit, Stretch, Tile, Center, Span (default)
-    echo.
-    rd /s /q "%TEMP_DIR%" 2>nul
-    exit /b 1
+    goto :cleanup
 )
 
 echo [DEBUG] Image parameter provided: %~1
@@ -75,9 +74,7 @@ if not exist "%~1" (
     echo [DEBUG] Specified image file not found
     echo ERROR: The specified image file does not exist: %~1
     echo Please provide a valid path to an image file.
-    echo.
-    rd /s /q "%TEMP_DIR%" 2>nul
-    exit /b 1
+    goto :cleanup
 )
 
 echo [DEBUG] Image file exists
@@ -100,72 +97,32 @@ if not "%~2"=="" (
 )
 echo.
 
-echo Preparing to execute PowerShell script...
-echo [DEBUG] PowerShell environment details:
-powershell -Command "Write-Host '[DEBUG] PowerShell version: ' + $PSVersionTable.PSVersion; Write-Host '[DEBUG] .NET version: ' + [Environment]::Version"
+echo IMPORTANT: Executing PowerShell script...
 
-REM Create a debug-focused script wrapper
-set "DEBUG_WRAPPER=%TEMP_DIR%\debug_wrapper.ps1"
-echo [DEBUG] Creating debug wrapper script: %DEBUG_WRAPPER%
+REM *** DIRECT EXECUTION - SIMPLEST POSSIBLE APPROACH ***
+REM This is the most likely to work without any issues
+echo Command: powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" -ImageFile "%~1" %STYLE_PARAM% 
 
-echo # Debug wrapper for set_wallpaper.ps1 > "%DEBUG_WRAPPER%"
-echo $ErrorActionPreference = 'Continue' >> "%DEBUG_WRAPPER%"
-echo $VerbosePreference = 'Continue' >> "%DEBUG_WRAPPER%"
-echo $DebugPreference = 'Continue' >> "%DEBUG_WRAPPER%"
-echo Write-Host "`n[DEBUG] ===== STARTING POWERSHELL SCRIPT EXECUTION =====" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo Write-Host "[DEBUG] Parameters:" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo Write-Host "[DEBUG]   - ImageFile: '%~1'" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo if ('%STYLE_PARAM%' -ne '') { Write-Host "[DEBUG]   - Style: %~2" -ForegroundColor Cyan } >> "%DEBUG_WRAPPER%"
-echo Write-Host "[DEBUG] System Info:" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo Write-Host "[DEBUG]   - Current user: $([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo Write-Host "[DEBUG]   - Is admin: $([bool](New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo Write-Host "[DEBUG]   - PS Execution Policy: $(Get-ExecutionPolicy)" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo Write-Host "[DEBUG] Script source content preview (first 5 lines):" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo Get-Content '%PS_SCRIPT%' -TotalCount 5 | ForEach-Object { Write-Host "[DEBUG]   $_" -ForegroundColor Gray } >> "%DEBUG_WRAPPER%"
-echo Write-Host "`n[DEBUG] ===== EXECUTING MAIN SCRIPT =====" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo try { >> "%DEBUG_WRAPPER%"
-echo     # All output streams (1-6) get merged to output stream >> "%DEBUG_WRAPPER%"
-echo     & '%PS_SCRIPT%' -ImageFile '%~1' %STYLE_PARAM% -Verbose -Debug *>&1 | ForEach-Object { >> "%DEBUG_WRAPPER%"
-echo         $_  # This ensures all output is displayed >> "%DEBUG_WRAPPER%"
-echo     } >> "%DEBUG_WRAPPER%"
-echo     $script:LastExitCode = $LASTEXITCODE >> "%DEBUG_WRAPPER%"
-echo     Write-Host "`n[DEBUG] ===== SCRIPT EXECUTION COMPLETED =====" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo     Write-Host "[DEBUG] Exit code: $script:LastExitCode" -ForegroundColor Cyan >> "%DEBUG_WRAPPER%"
-echo } catch { >> "%DEBUG_WRAPPER%"
-echo     Write-Host "`n[DEBUG] ===== ERROR OCCURRED =====" -ForegroundColor Red >> "%DEBUG_WRAPPER%"
-echo     Write-Host "[DEBUG] Error in PowerShell script execution:" -ForegroundColor Red >> "%DEBUG_WRAPPER%"
-echo     Write-Host $_.Exception.Message -ForegroundColor Red >> "%DEBUG_WRAPPER%"
-echo     Write-Host "[DEBUG] Stack trace:" -ForegroundColor Red >> "%DEBUG_WRAPPER%"
-echo     Write-Host $_.ScriptStackTrace -ForegroundColor Red >> "%DEBUG_WRAPPER%"
-echo     $script:LastExitCode = 1 >> "%DEBUG_WRAPPER%"
-echo } >> "%DEBUG_WRAPPER%"
-echo exit $script:LastExitCode >> "%DEBUG_WRAPPER%"
-
-echo [DEBUG] Executing wrapper script...
-echo Running PowerShell with all debug output enabled:
-echo.
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "%DEBUG_WRAPPER%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" -ImageFile "%~1" %STYLE_PARAM%
 set PS_EXIT_CODE=%errorLevel%
 
 echo.
-echo PowerShell script execution completed with exit code: %PS_EXIT_CODE%
+echo PowerShell execution completed with exit code: %PS_EXIT_CODE%
 echo.
 
-if %PS_EXIT_CODE% neq 0 (
-    echo =========================================
-    echo ERROR: The wallpaper setter script encountered an error ^(Exit code: %PS_EXIT_CODE%^)
-    echo Check the output above for detailed error information
-    echo =========================================
-) else (
+if %PS_EXIT_CODE% EQU 0 (
     echo =========================================
     echo Wallpaper set successfully!
     echo To verify, check your desktop background
     echo =========================================
+) else (
+    echo =========================================
+    echo ERROR: Failed to set wallpaper (Exit code: %PS_EXIT_CODE%)
+    echo =========================================
 )
 
+:cleanup
 echo.
-echo [DEBUG] Final cleanup...
 echo Cleaning up temporary files...
 rd /s /q "%TEMP_DIR%" 2>nul
 echo [DEBUG] Script completed at: %date% %time%
