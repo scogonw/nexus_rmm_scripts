@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-echo Scogo Nexus RMM Wallpaper Restriction Removal Tool v1.0.0
+echo Scogo Nexus RMM Wallpaper Restriction Removal Tool v1.0.1
 echo ----------------------------------------------
 
 :: Check for Administrator privileges
@@ -68,15 +68,24 @@ echo [INFO] Creating a minimal script...
     echo try {
     echo     # Remove ActiveDesktop restriction
     echo     Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop" -Name "NoChangingWallPaper" -Force -ErrorAction SilentlyContinue
+    echo     Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop" -Force -Recurse -ErrorAction SilentlyContinue
     echo.
     echo     # Remove Personalization restriction
     echo     Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization" -Name "PreventChangingWallPaper" -Force -ErrorAction SilentlyContinue
+    echo     Remove-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization" -Force -Recurse -ErrorAction SilentlyContinue
     echo.
     echo     # Remove Control Panel restriction
     echo     Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "NoDispBackgroundPage" -Force -ErrorAction SilentlyContinue
+    echo     Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "NoDispAppearancePage" -Force -ErrorAction SilentlyContinue
     echo.
     echo     # Remove Explorer restriction
     echo     Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" -Name "NoActiveDesktopChanges" -Force -ErrorAction SilentlyContinue
+    echo     Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" -Name "NoDesktop" -Force -ErrorAction SilentlyContinue
+    echo.
+    echo     # Remove current user restrictions too
+    echo     Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop" -Force -Recurse -ErrorAction SilentlyContinue
+    echo     Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Force -Recurse -ErrorAction SilentlyContinue
+    echo     Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" -Force -Recurse -ErrorAction SilentlyContinue
     echo.
     echo     Write-Host "[SUCCESS] Global wallpaper restrictions removed"
     echo } catch {
@@ -90,17 +99,49 @@ echo [INFO] Creating a minimal script...
     echo         Remove-Item -Path $startupFile -Force
     echo         Write-Host "Removed startup script"
     echo     }
+    echo     
+    echo     $refreshScript = "C:\ProgramData\Scogo\Wallpaper\RefreshWallpaper.ps1"
+    echo     if ^(Test-Path $refreshScript^) {
+    echo         Remove-Item -Path $refreshScript -Force
+    echo         Write-Host "Removed refresh script"
+    echo     }
+    echo     
+    echo     try {
+    echo         $taskExists = Get-ScheduledTask -TaskName "RefreshCorporateWallpaper" -ErrorAction SilentlyContinue
+    echo         if ^($taskExists^) {
+    echo             Unregister-ScheduledTask -TaskName "RefreshCorporateWallpaper" -Confirm:$false
+    echo             Write-Host "Removed scheduled task"
+    echo         }
+    echo     } catch {
+    echo         # Try alternative method
+    echo         try {
+    echo             schtasks /Delete /TN "RefreshCorporateWallpaper" /F 2^>$null
+    echo         } catch { }
+    echo     }
     echo } catch {
     echo     Write-Host "[ERROR] Failed to remove startup script: $_"
     echo }
     echo.
+    echo # Restart Explorer to apply changes
+    echo try {
+    echo     $explorerProcesses = Get-Process -Name "explorer" -ErrorAction SilentlyContinue
+    echo     if ^($explorerProcesses^) {
+    echo         $explorerProcesses ^| ForEach-Object { Stop-Process -Id $_.Id -Force }
+    echo         Start-Sleep -Seconds 2
+    echo         Start-Process "explorer.exe"
+    echo         Write-Host "Restarted Explorer"
+    echo     }
+    echo } catch { }
+    echo.
     echo # Refresh desktop settings
     echo try { 
     echo     & rundll32.exe user32.dll,UpdatePerUserSystemParameters
+    echo     & rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True
     echo     Write-Host "Desktop settings refreshed"
     echo } catch { }
     echo.
     echo Write-Host "You can now change your wallpaper using Windows Settings or Control Panel."
+    echo Write-Host "If you still cannot change your wallpaper, try restarting your computer."
 ) > "%PS_SCRIPT%"
 
 if not exist "%PS_SCRIPT%" (
@@ -124,14 +165,16 @@ if %PS_EXIT_CODE% EQU 0 (
     
     :: Try a direct method as a last resort
     echo [INFO] Attempting fallback method...
-    powershell -ExecutionPolicy Bypass -Command "& { try { Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop' -Name 'NoChangingWallPaper' -Force -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'PreventChangingWallPaper' -Force -ErrorAction SilentlyContinue; Write-Host '[SUCCESS] Fallback method successful.'; } catch { Write-Host '[ERROR] Fallback method failed: ' + $_.Exception.Message; exit 1 } }"
+    powershell -ExecutionPolicy Bypass -Command "& { try { Remove-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop' -Force -Recurse -ErrorAction SilentlyContinue; Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Force -Recurse -ErrorAction SilentlyContinue; Remove-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop' -Force -Recurse -ErrorAction SilentlyContinue; Remove-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System' -Force -Recurse -ErrorAction SilentlyContinue; $explorerProcesses = Get-Process -Name 'explorer' -ErrorAction SilentlyContinue; if ($explorerProcesses) { $explorerProcesses | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }; Start-Sleep -Seconds 2; Start-Process 'explorer.exe'; }; & rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True; Write-Host '[SUCCESS] Fallback method successful.'; } catch { Write-Host '[ERROR] Fallback method failed: ' + $_.Exception.Message; exit 1 } }"
     set PS_FALLBACK_CODE=%ERRORLEVEL%
     
     if %PS_FALLBACK_CODE% EQU 0 (
         echo [SUCCESS] Wallpaper restrictions removed using fallback method.
+        echo [INFO] You may need to restart your computer for all changes to take effect.
         exit /b 0
     ) else (
         echo [ERROR] All methods failed. Unable to remove wallpaper restrictions.
+        echo [INFO] You may need to restart your computer and try again.
         exit /b %PS_EXIT_CODE%
     )
 )
