@@ -16,6 +16,7 @@ This set of scripts allows you to automatically deploy and enforce a corporate w
 - Validates downloaded image files for security
 - Robust error handling and recovery mechanisms
 - Multiple fallback methods if script or image download fails
+- Compatible with all PowerShell versions including older ones with stricter parsing
 
 ## Files
 
@@ -107,10 +108,9 @@ The script includes multiple methods to set the wallpaper to ensure compatibilit
 
 1. Windows API via `SystemParametersInfo` - Primary method for immediate effect
 2. Registry modification for each user profile - For persistence across sessions
-3. Direct manipulation for currently logged-in users via temporary script files
-4. Startup script to ensure settings persist after reboot
-5. Scheduled task for Windows 7 compatibility
-6. Last-resort inline PowerShell command if all else fails
+3. Separate PowerShell script for startup - Avoids complex string escaping issues
+4. Scheduled task for Windows 7 compatibility
+5. Last-resort inline PowerShell command if all else fails
 
 ### Error Handling
 
@@ -124,6 +124,15 @@ The script includes robust error handling:
 - Exit code reporting for monitoring systems
 - Script generation fallback if download fails
 - Better string escaping to prevent parsing errors
+
+### PsExec Issues
+
+In version 1.1.2:
+- Completely removed PsExec approach to avoid string escaping issues
+- Now using registry methods for all users including logged-in ones
+- Created separate PowerShell script file for the startup process
+- Fixed all string escaping problems by avoiding complex inline commands
+- The script no longer has any dependencies on external tools like PsExec
 
 ## Compatibility
 
@@ -195,13 +204,6 @@ If you see registry-related errors:
 - Verify the script is running with administrative privileges
 - In extreme cases, a system restart may be needed to unlock registry hives
 
-### PsExec Issues
-
-If you see errors related to PsExec:
-- In v1.1.1, we've simplified the approach to avoid complex string escaping issues
-- Now using temporary script files instead of complex inline commands
-- You don't need to have PsExec installed, as the script will fall back to registry methods
-
 ## Security Considerations
 
 - The script requires administrative privileges to modify registry settings
@@ -244,3 +246,4 @@ For RMM tools, create a script that:
 - v1.0.0: Initial release
 - v1.1.0: Added improved error handling, domain support, and Windows version detection
 - v1.1.1: Fixed string escaping issues, improved fallback methods, added better error handling and reporting
+- v1.1.2: Removed PsExec dependency, simplified approach to avoid string escaping issues, improved script separation
