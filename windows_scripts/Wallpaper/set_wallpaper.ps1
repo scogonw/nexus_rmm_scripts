@@ -495,7 +495,7 @@ try {
     
     # Get OS version specific settings
     try {
-        $osSettings = Get-WindowsVersionSpecificSettings()
+        $osSettings = Get-WindowsVersionSpecificSettings
     } catch {
         Write-Warning "Error detecting Windows version: $_. Will use default settings."
         $osSettings = @{
@@ -629,12 +629,12 @@ try {
 Start-Sleep -Seconds 5
 
 # Define wallpaper path
-`$wallpaperPath = "$wallpaperPath"
+$wallpaperPath = "$wallpaperPath"
 
 # Make sure the wallpaper file exists
-if (Test-Path `$wallpaperPath) {
+if (Test-Path $wallpaperPath) {
     # Force refresh desktop
-    `$null = Start-Process -FilePath 'C:\Windows\System32\RUNDLL32.EXE' -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -NoNewWindow
+    $null = Start-Process -FilePath 'C:\Windows\System32\RUNDLL32.EXE' -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -NoNewWindow
 
     # Use Windows API to set wallpaper
     Add-Type -TypeDefinition @'
@@ -645,10 +645,10 @@ public class Wallpaper {
     public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
 }
 '@
-    [Wallpaper]::SystemParametersInfo(20, 0, `$wallpaperPath, 3)
+    [Wallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3)
     Write-Host "Wallpaper refreshed successfully."
 } else {
-    Write-Host "Wallpaper file not found at: `$wallpaperPath"
+    Write-Host "Wallpaper file not found at: $wallpaperPath"
 }
 "@
         
