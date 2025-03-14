@@ -158,6 +158,137 @@ Important paths used by the script:
 - `~/.config/autostart/`: User-specific autostart entries
 - `~/.local/bin/`: User-specific scripts for fallback methods
 
+## Reverting Changes
+
+If you need to allow users to change their wallpapers again after running this script, use the following commands based on the desktop environment (must be run as root):
+
+### GNOME/Ubuntu/Budgie
+```bash
+# Quick method - just removes the lock
+rm -f /etc/dconf/db/local.d/locks/background && dconf update
+
+# Complete method - removes both configuration and lock
+rm -f /etc/dconf/db/local.d/01-background /etc/dconf/db/local.d/locks/background && dconf update
+```
+
+### Cinnamon (Linux Mint)
+```bash
+rm -f /etc/dconf/db/local.d/01-cinnamon-background /etc/dconf/db/local.d/locks/cinnamon-background && dconf update
+```
+
+### MATE
+```bash
+rm -f /etc/dconf/db/local.d/01-mate-background /etc/dconf/db/local.d/locks/mate-background && dconf update
+```
+
+### XFCE
+```bash
+# Find all users and restore file permissions
+for userdir in /home/*; do
+  username=$(basename "$userdir")
+  config_file="$userdir/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml"
+  if [ -f "$config_file" ]; then
+    chmod 644 "$config_file"
+    chown "$username":"$username" "$config_file"
+  fi
+done
+```
+
+### KDE Plasma
+```bash
+# Find all users and restore file permissions
+for userdir in /home/*; do
+  username=$(basename "$userdir")
+  config_file="$userdir/.config/plasma-org.kde.plasma.desktop-appletsrc"
+  if [ -f "$config_file" ]; then
+    chmod 644 "$config_file"
+    chown "$username":"$username" "$config_file"
+    # Remove lock directory
+    rm -rf "$userdir/.config/plasma-org.kde.plasma.desktop-appletsrc.lock"
+  fi
+done
+```
+
+### LXDE/LXQt
+```bash
+# For LXDE
+for userdir in /home/*; do
+  username=$(basename "$userdir")
+  config_file="$userdir/.config/pcmanfm/LXDE/desktop-items-0.conf"
+  if [ -f "$config_file" ]; then
+    chmod 644 "$config_file"
+    chown "$username":"$username" "$config_file"
+  fi
+done
+
+# For LXQt
+for userdir in /home/*; do
+  username=$(basename "$userdir")
+  config_file="$userdir/.config/pcmanfm-qt/lxqt/settings.conf"
+  if [ -f "$config_file" ]; then
+    chmod 644 "$config_file"
+    chown "$username":"$username" "$config_file"
+  fi
+done
+```
+
+### Generic/All Users (Complete Cleanup)
+```bash
+# Complete cleanup script for all methods
+# Must be run as root
+#!/bin/bash
+
+# Remove dconf settings and locks
+rm -f /etc/dconf/db/local.d/01-background
+rm -f /etc/dconf/db/local.d/01-cinnamon-background
+rm -f /etc/dconf/db/local.d/01-mate-background
+rm -f /etc/dconf/db/local.d/01-budgie-background
+rm -f /etc/dconf/db/local.d/locks/background
+rm -f /etc/dconf/db/local.d/locks/cinnamon-background
+rm -f /etc/dconf/db/local.d/locks/mate-background
+rm -f /etc/dconf/db/local.d/locks/budgie-background
+dconf update
+
+# Remove autostart entries and restore file permissions for all users
+for userdir in /home/*; do
+  username=$(basename "$userdir")
+  
+  # Remove autostart entry
+  rm -f "$userdir/.config/autostart/set-wallpaper.desktop"
+  
+  # XFCE permissions
+  config_file="$userdir/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml"
+  if [ -f "$config_file" ]; then
+    chmod 644 "$config_file"
+    chown "$username":"$username" "$config_file"
+  fi
+  
+  # KDE permissions
+  config_file="$userdir/.config/plasma-org.kde.plasma.desktop-appletsrc"
+  if [ -f "$config_file" ]; then
+    chmod 644 "$config_file"
+    chown "$username":"$username" "$config_file"
+    rm -rf "$userdir/.config/plasma-org.kde.plasma.desktop-appletsrc.lock"
+  fi
+  
+  # LXDE permissions
+  config_file="$userdir/.config/pcmanfm/LXDE/desktop-items-0.conf"
+  if [ -f "$config_file" ]; then
+    chmod 644 "$config_file"
+    chown "$username":"$username" "$config_file"
+  fi
+  
+  # LXQt permissions
+  config_file="$userdir/.config/pcmanfm-qt/lxqt/settings.conf"
+  if [ -f "$config_file" ]; then
+    chmod 644 "$config_file"
+    chown "$username":"$username" "$config_file"
+  fi
+done
+
+echo "Wallpaper locks have been removed for all users and all desktop environments."
+```
+
 ## Extending the Script
 
 ### Supporting New Desktop Environments
