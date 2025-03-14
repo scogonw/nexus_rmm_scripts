@@ -20,7 +20,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 :: Set default values
 set "IMAGE_URL=https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg"
-set "STYLE=Span"
+set "STYLE=Center"
 
 :: Process parameters
 if not "%~1"=="" (
@@ -120,7 +120,7 @@ if not exist "%PS_SCRIPT%" (
         
         :: Create a minimal script that just sets the wallpaper
         (
-            echo param^([string]$ImageUrl = "https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg", [string]$Style = "Span"^)
+            echo param^([string]$ImageUrl = "https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg", [string]$Style = "Center"^)
             echo.
             echo try {
             echo     Write-Host "Attempting to download and set wallpaper from $ImageUrl"

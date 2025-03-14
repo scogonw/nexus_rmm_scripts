@@ -17,7 +17,7 @@
 	Version: 1.1.2
 #>
 
-param([string]$ImageUrl = "https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg", [string]$Style = "Span")
+param([string]$ImageUrl = "https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg", [string]$Style = "Center")
 
 function SetWallPaperWithFallback {
     param (
@@ -25,7 +25,7 @@ function SetWallPaperWithFallback {
         [string]$ImagePath,
         
         [ValidateSet('Fill', 'Fit', 'Stretch', 'Tile', 'Center', 'Span')]
-        [string]$Style = "Span"
+        [string]$Style = "Center"
     )
 
     # Map style names to values
@@ -263,7 +263,7 @@ function Download-File {
             return $false
         }
         
-        Write-Host "✅ Image downloaded successfully to $OutputPath"
+        Write-Host "[SUCCESS] Image downloaded successfully to $OutputPath"
         return $true
     } catch [System.Net.WebException] {
         Write-Error "Network error downloading image: $($_.Exception.Message)"
@@ -326,7 +326,7 @@ function Block-WallpaperChanges {
             }
         }
         
-        Write-Host "✅ Successfully blocked wallpaper changes for all users"
+        Write-Host "[SUCCESS] Successfully blocked wallpaper changes for all users"
         return $true
     } catch {
         Write-Error "Failed to block wallpaper changes: $_"
@@ -371,7 +371,7 @@ function Set-WallpaperForUser {
         [Parameter(Mandatory=$true)]
         [string]$ImagePath,
         
-        [string]$Style = "Span",
+        [string]$Style = "Center",
         
         [string]$SID = ""
     )
@@ -450,7 +450,7 @@ function Set-WallpaperForUser {
         & reg add "$tempKey\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop" /v NoChangingWallPaper /t REG_DWORD /d 1 /f | Out-Null
         & reg add "$tempKey\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v NoDispBackgroundPage /t REG_DWORD /d 1 /f | Out-Null
         
-        Write-Host "✅ Wallpaper settings applied for user: $username"
+        Write-Host "[SUCCESS] Wallpaper settings applied for user: $username"
         return $true
     } catch {
         Write-Error "Error setting wallpaper for $username`: $_"
@@ -590,7 +590,7 @@ try {
             if (Test-Path $wallpaperPath) {
                 $fileInfo = Get-Item $wallpaperPath
                 if ($fileInfo.Length -gt 0) {
-                    Write-Host "✅ Image downloaded successfully using alternative method"
+                    Write-Host "[SUCCESS] Image downloaded successfully using alternative method"
                     $downloadSuccess = $true
                 }
             }
@@ -625,7 +625,7 @@ try {
         $currentUserSuccess = SetWallPaperWithFallback -ImagePath $wallpaperPath -Style $Style
         
         if ($currentUserSuccess) {
-            Write-Host "✅ Wallpaper set for current user"
+            Write-Host "[SUCCESS] Wallpaper set for current user"
         } else {
             Write-Warning "Failed to set wallpaper for current user using direct method. Will try registry method."
         }
@@ -722,7 +722,7 @@ powershell.exe -ExecutionPolicy Bypass -File "$refreshScriptPath"
         $startupFile = Join-Path $startupDir "RefreshWallpaper.bat"
         Set-Content -Path $startupFile -Value $batchContent -Force
         
-        Write-Host "✅ Startup script created successfully"
+        Write-Host "[SUCCESS] Startup script created successfully"
         
         # For Windows 7, we need to create a scheduled task as well (startup scripts sometimes don't work reliably)
         if ($osSettings.IsWindows7) {
