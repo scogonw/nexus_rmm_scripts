@@ -379,13 +379,25 @@ function Set-WallpaperForUser {
     $username = Split-Path $UserProfilePath -Leaf
     Write-Host "Setting wallpaper for user: $username"
     
-    # Determine if user is currently logged in
-    $activeSessionQuery = query session 2>$null
-    $isUserLoggedIn = $activeSessionQuery -match $username
-    
-    if ($isUserLoggedIn) {
-        Write-Host "User $username is currently logged in. Will apply wallpaper through registry method."
-        # For logged-in users, we will use registry method only - avoid PsExec due to escaping issues
+    # Determine if user is currently logged in using PowerShell native approach
+    try {
+        # Get all explorer.exe processes and check their owner
+        $isUserLoggedIn = $false
+        $explorerProcesses = Get-WmiObject -Class Win32_Process -Filter "Name = 'explorer.exe'" -ErrorAction SilentlyContinue
+        
+        foreach ($process in $explorerProcesses) {
+            $processOwner = $null
+            $result = $process.GetOwner([ref]$processOwner)
+            
+            if ($result.ReturnValue -eq 0 -and $processOwner -eq $username) {
+                $isUserLoggedIn = $true
+                Write-Host "User $username is currently logged in. Will apply wallpaper through registry method."
+                break
+            }
+        }
+    } catch {
+        Write-Warning "Could not determine if user is logged in: $_"
+        $isUserLoggedIn = $false
     }
     
     # Always attempt registry method as the main approach
@@ -664,7 +676,7 @@ try {
         }
     }
     
-    Write-Host "Successfully set wallpaper for $userSuccessCount out of $($userProfiles.Count) users."
+    Write-Host "Successfully set wallpaper for $userSuccessCount out of $($userProfiles.Count) user profiles."
     
     # Setup a startup script to reapply the wallpaper when users log in
     try {
