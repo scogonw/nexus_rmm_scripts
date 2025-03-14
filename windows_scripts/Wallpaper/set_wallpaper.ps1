@@ -185,13 +185,37 @@ function Download-File {
         
         # Create webclient with TLS 1.2 support (for older Windows versions)
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        
+        # Set default connection timeout (in milliseconds)
+        [System.Net.ServicePointManager]::DefaultConnectionLimit = 100
+        [System.Net.ServicePointManager]::MaxServicePointIdleTime = 30000
+        
+        # Create web client with proper timeout handling
         $webClient = New-Object System.Net.WebClient
         
-        # Add timeout
-        $webClient.Timeout = 30000 # 30 seconds
+        # Using WebClient events to handle timeouts
+        $timeoutMS = 30000
+        $hasTimedOut = $false
+        
+        # Register a timeout event
+        $timer = New-Object System.Timers.Timer
+        $timer.Interval = $timeoutMS
+        $timer.AutoReset = $false
+        $timer.Enabled = $true
+        
+        # Define timeout event handler
+        Register-ObjectEvent -InputObject $timer -EventName Elapsed -Action {
+            $global:hasTimedOut = $true
+            $webClient.CancelAsync()
+            Write-Host "Download timed out after $($timeoutMS / 1000) seconds."
+        } | Out-Null
         
         # Download the file
         $webClient.DownloadFile($Url, $OutputPath)
+        
+        # Cleanup timer and event handlers
+        $timer.Stop()
+        Get-EventSubscriber | Where-Object {$_.SourceObject.GetType().Name -eq 'Timer'} | Unregister-Event -Force
         
         # Verify the downloaded file is an image
         if (Test-Path $OutputPath) {
@@ -247,6 +271,9 @@ function Download-File {
     } catch {
         Write-Error "Failed to download image: $_"
         return $false
+    } finally {
+        # Clean up any remaining event subscribers
+        Get-EventSubscriber | Where-Object {$_.SourceObject.GetType().Name -eq 'Timer'} | Unregister-Event -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -549,6 +576,30 @@ try {
         Write-Error "Error during download: $_"
     }
     
+    # If the main download failed, try a simple alternative method
+    if (-not $downloadSuccess) {
+        Write-Host "Primary download failed. Trying alternative download method..."
+        try {
+            # Configure TLS 1.2
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            
+            # Use Invoke-WebRequest which is more reliable in some environments
+            Invoke-WebRequest -Uri $ImageUrl -OutFile $wallpaperPath -UseBasicParsing -TimeoutSec 30
+            
+            # Check if file was downloaded successfully
+            if (Test-Path $wallpaperPath) {
+                $fileInfo = Get-Item $wallpaperPath
+                if ($fileInfo.Length -gt 0) {
+                    Write-Host "✅ Image downloaded successfully using alternative method"
+                    $downloadSuccess = $true
+                }
+            }
+        } catch {
+            Write-Warning "Alternative download method also failed: $_"
+        }
+    }
+    
+    # If both download methods failed, try to use a locally cached copy
     if (-not $downloadSuccess) {
         # Try to use a locally cached copy if available
         $localCopy = Join-Path $PSScriptRoot "corporate-wallpaper.jpg"

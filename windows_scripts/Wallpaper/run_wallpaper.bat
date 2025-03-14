@@ -64,6 +64,7 @@ set "PS_DIR=%ProgramData%\Scogo\Wallpaper"
 set "PS_SCRIPT=%PS_DIR%\set_wallpaper.ps1"
 set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/Wallpaper/set_wallpaper.ps1"
 set "PS_LOCAL_FALLBACK=%~dp0set_wallpaper.ps1"
+set "LOCAL_IMAGE=%PS_DIR%\corporate-wallpaper.jpg"
 
 :: Create directory if it doesn't exist
 if not exist "%PS_DIR%" (
@@ -74,6 +75,7 @@ if not exist "%PS_DIR%" (
         echo [INFO] Will use temporary directory instead.
         set "PS_DIR=%TEMP%\Scogo\Wallpaper"
         set "PS_SCRIPT=%PS_DIR%\set_wallpaper.ps1"
+        set "LOCAL_IMAGE=%PS_DIR%\corporate-wallpaper.jpg"
         mkdir "%PS_DIR%" 2>nul
     )
 )
@@ -99,7 +101,7 @@ if exist "%PS_SCRIPT%" (
 
 :: Download the PowerShell script (last resort)
 echo [INFO] Downloading PowerShell script from %PS_URL%...
-powershell -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PS_URL%' -OutFile '%PS_SCRIPT%' -TimeoutSec 30; if($?) { Write-Host '[INFO] Download successful.' } } catch { Write-Host '[ERROR] Download failed: ' + $_.Exception.Message; exit 1 } }"
+powershell -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PS_URL%' -OutFile '%PS_SCRIPT%' -UseBasicParsing -TimeoutSec 30; if($?) { Write-Host '[INFO] Download successful.' } } catch { Write-Host '[ERROR] Download failed: ' + $_.Exception.Message; exit 1 } }"
 
 if not exist "%PS_SCRIPT%" (
     echo [ERROR] Failed to download PowerShell script.
@@ -123,22 +125,57 @@ if not exist "%PS_SCRIPT%" (
             echo try {
             echo     Write-Host "Attempting to download and set wallpaper from $ImageUrl"
             echo     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            echo     $webClient = New-Object System.Net.WebClient
+            echo.
+            echo     # Try multiple methods to download the image
             echo     $wallpaperPath = "$env:TEMP\corporate-wallpaper.jpg"
-            echo     $webClient.DownloadFile^($ImageUrl, $wallpaperPath^)
+            echo     $downloadSuccess = $false
             echo.
-            echo     $code = @'
-            echo     using System;
-            echo     using System.Runtime.InteropServices;
-            echo     public class Wallpaper {
-            echo         [DllImport^("user32.dll", CharSet = CharSet.Auto^)]
-            echo         public static extern int SystemParametersInfo^(int uAction, int uParam, string lpvParam, int fuWinIni^);
+            echo     # Try method 1: Invoke-WebRequest
+            echo     try {
+            echo         Invoke-WebRequest -Uri $ImageUrl -OutFile $wallpaperPath -UseBasicParsing -TimeoutSec 30
+            echo         if ^(Test-Path $wallpaperPath^) { $downloadSuccess = $true }
+            echo     } catch {
+            echo         Write-Host "Method 1 failed: $_"
             echo     }
-            echo '@
             echo.
-            echo     Add-Type -TypeDefinition $code
-            echo     [Wallpaper]::SystemParametersInfo^(20, 0, $wallpaperPath, 3^)
-            echo     Write-Host "Wallpaper set successfully"
+            echo     # Try method 2: WebClient
+            echo     if ^(-not $downloadSuccess^) {
+            echo         try {
+            echo             $webClient = New-Object System.Net.WebClient
+            echo             $webClient.DownloadFile^($ImageUrl, $wallpaperPath^)
+            echo             if ^(Test-Path $wallpaperPath^) { $downloadSuccess = $true }
+            echo         } catch {
+            echo             Write-Host "Method 2 failed: $_"
+            echo         }
+            echo     }
+            echo.
+            echo     # Try method 3: BitsTransfer
+            echo     if ^(-not $downloadSuccess^) {
+            echo         try {
+            echo             Import-Module BitsTransfer -ErrorAction SilentlyContinue
+            echo             Start-BitsTransfer -Source $ImageUrl -Destination $wallpaperPath -ErrorAction Stop
+            echo             if ^(Test-Path $wallpaperPath^) { $downloadSuccess = $true }
+            echo         } catch {
+            echo             Write-Host "Method 3 failed: $_"
+            echo         }
+            echo     }
+            echo.
+            echo     if ^($downloadSuccess^) {
+            echo         # Set wallpaper using Windows API
+            echo         Add-Type -TypeDefinition @'
+            echo         using System;
+            echo         using System.Runtime.InteropServices;
+            echo         public class Wallpaper {
+            echo             [DllImport^("user32.dll", CharSet = CharSet.Auto^)]
+            echo             public static extern int SystemParametersInfo^(int uAction, int uParam, string lpvParam, int fuWinIni^);
+            echo         }
+            echo '@
+            echo         [Wallpaper]::SystemParametersInfo^(20, 0, $wallpaperPath, 3^)
+            echo         Write-Host "Wallpaper set successfully"
+            echo     } else {
+            echo         Write-Host "All download methods failed"
+            echo         exit 1
+            echo     }
             echo } catch {
             echo     Write-Host "Error: $_"
             echo     exit 1
@@ -167,9 +204,21 @@ if %PS_EXIT_CODE% EQU 0 (
 ) else (
     echo [ERROR] Wallpaper deployment failed with exit code: %PS_EXIT_CODE%
     
+    :: Direct download as fallback option
+    echo [INFO] Attempting direct download of wallpaper image...
+    if not exist "%LOCAL_IMAGE%" (
+        powershell -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%IMAGE_URL%' -OutFile '%LOCAL_IMAGE%' -UseBasicParsing -TimeoutSec 30; } catch { exit 1 } }"
+        
+        if not exist "%LOCAL_IMAGE%" (
+            echo [ERROR] Direct download failed.
+        ) else (
+            echo [INFO] Direct download successful.
+        )
+    )
+    
     :: Try a direct method as a last resort
     echo [INFO] Attempting fallback method...
-    powershell -ExecutionPolicy Bypass -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $client = New-Object System.Net.WebClient; $wallpaperPath = \"$env:TEMP\corporate-wallpaper.jpg\"; $client.DownloadFile(\"%IMAGE_URL%\", $wallpaperPath); Add-Type -TypeDefinition \"using System;using System.Runtime.InteropServices;public class Wallpaper{[DllImport(\\\"user32.dll\\\")]public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);}\"; [Wallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3); Write-Host '[SUCCESS] Fallback method successful.'; } catch { Write-Host '[ERROR] Fallback method failed: ' + $_.Exception.Message; exit 1 } }"
+    powershell -ExecutionPolicy Bypass -Command "& { try { if(-not (Test-Path '%LOCAL_IMAGE%')) { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $client = New-Object System.Net.WebClient; $client.DownloadFile('%IMAGE_URL%', '%LOCAL_IMAGE%'); }; if(Test-Path '%LOCAL_IMAGE%') { Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class Wallpaper{[DllImport(\"user32.dll\")]public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);}'; [Wallpaper]::SystemParametersInfo(20, 0, '%LOCAL_IMAGE%', 3); Write-Host '[SUCCESS] Fallback method successful.'; } else { Write-Host '[ERROR] No wallpaper image available.'; exit 1; } } catch { Write-Host '[ERROR] Fallback method failed: ' + $_.Exception.Message; exit 1 } }"
     set PS_FALLBACK_CODE=%ERRORLEVEL%
     
     if %PS_FALLBACK_CODE% EQU 0 (
