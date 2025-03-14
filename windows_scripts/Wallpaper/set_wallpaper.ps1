@@ -17,7 +17,7 @@
 	Version: 1.1.2
 #>
 
-param([string]$ImageUrl = "https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg", [string]$Style = "Center")
+param([string]$ImageUrl = "https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg", [string]$Style = "Fit")
 
 function SetWallPaperWithFallback {
     param (
@@ -25,7 +25,7 @@ function SetWallPaperWithFallback {
         [string]$ImagePath,
         
         [ValidateSet('Fill', 'Fit', 'Stretch', 'Tile', 'Center', 'Span')]
-        [string]$Style = "Center"
+        [string]$Style = "Fit"
     )
 
     # Map style names to values
@@ -371,7 +371,7 @@ function Set-WallpaperForUser {
         [Parameter(Mandatory=$true)]
         [string]$ImagePath,
         
-        [string]$Style = "Center",
+        [string]$Style = "Fit",
         
         [string]$SID = ""
     )
@@ -379,25 +379,19 @@ function Set-WallpaperForUser {
     $username = Split-Path $UserProfilePath -Leaf
     Write-Host "Setting wallpaper for user: $username"
     
-    # Determine if user is currently logged in using PowerShell native approach
+    # Determine if user is currently logged in using a simpler approach
+    $isUserLoggedIn = $false
+    
+    # Check if their registry hive is loaded (a good indicator they're logged in)
     try {
-        # Get all explorer.exe processes and check their owner
-        $isUserLoggedIn = $false
-        $explorerProcesses = Get-WmiObject -Class Win32_Process -Filter "Name = 'explorer.exe'" -ErrorAction SilentlyContinue
-        
-        foreach ($process in $explorerProcesses) {
-            $processOwner = $null
-            $result = $process.GetOwner([ref]$processOwner)
-            
-            if ($result.ReturnValue -eq 0 -and $processOwner -eq $username) {
-                $isUserLoggedIn = $true
-                Write-Host "User $username is currently logged in. Will apply wallpaper through registry method."
-                break
-            }
+        # Check for processes owned by this user - a more reliable way to detect if user is logged in
+        $processes = Get-Process -IncludeUserName -ErrorAction SilentlyContinue | Where-Object { $_.UserName -match $username }
+        if ($processes -and $processes.Count -gt 0) {
+            $isUserLoggedIn = $true
+            Write-Host "User $username is currently logged in (detected active processes)"
         }
     } catch {
-        Write-Warning "Could not determine if user is logged in: $_"
-        $isUserLoggedIn = $false
+        Write-Warning "Could not check for user processes. Will continue anyway."
     }
     
     # Always attempt registry method as the main approach
@@ -779,7 +773,7 @@ powershell.exe -ExecutionPolicy Bypass -File "$refreshScriptPath"
     
     exit 0 # success
 } catch {
-    Write-Host "⚠️ Error in line $($_.InvocationInfo.ScriptLineNumber): $($Error[0])" -ForegroundColor Red
-    Write-Host "Full error details: $_" -ForegroundColor Red
+    Write-Host "[ERROR] Script failed at line $($_.InvocationInfo.ScriptLineNumber): $($Error[0])" -ForegroundColor Red
+    Write-Host "[ERROR DETAILS] $($_)" -ForegroundColor Red
     exit 1
 }
