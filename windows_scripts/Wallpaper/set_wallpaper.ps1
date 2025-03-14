@@ -14,7 +14,7 @@
 .NOTES
 	Author: Karan Singh | License: MIT
 	Modified for Scogo Nexus RMM
-	Version: 1.1.0
+	Version: 1.1.2
 #>
 
 param([string]$ImageUrl = "https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg", [string]$Style = "Span")
@@ -357,55 +357,11 @@ function Set-WallpaperForUser {
     $isUserLoggedIn = $activeSessionQuery -match $username
     
     if ($isUserLoggedIn) {
-        Write-Host "User $username is currently logged in. Will apply wallpaper through active session."
-        # For logged-in users, we can use alternative methods
-        try {
-            # Try to set through RunAsUser if possible
-            if ($SID -ne "") {
-                $runAsUserSuccess = $false
-                
-                # This method requires PSEXEC from Sysinternals - try to use if available
-                $psexecPath = "$env:ProgramFiles\Sysinternals\PsExec.exe"
-                if (Test-Path $psexecPath) {
-                    Write-Host "Using PsExec to set wallpaper for logged-in user..."
-                    
-                    # Create a temporary script file instead of trying to escape complex commands
-                    $tempScriptPath = Join-Path $env:TEMP "SetWallpaper_$username.ps1"
-                    $escapedImagePath = $ImagePath.Replace('\', '\\').Replace("'", "\'")
-                    $tempScriptContent = @"
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public class Wallpaper {
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
-}
-'@
-[Wallpaper]::SystemParametersInfo(20, 0, '$escapedImagePath', 3)
-"@
-                    Set-Content -Path $tempScriptPath -Value $tempScriptContent -Force
-                    
-                    # Run the temporary script via PsExec
-                    & $psexecPath -i -u $username -accepteula -h powershell.exe -ExecutionPolicy Bypass -File "$tempScriptPath" 2>$null
-                    if ($LASTEXITCODE -eq 0) {
-                        $runAsUserSuccess = $true
-                        Write-Host "Successfully set wallpaper for logged-in user via PsExec"
-                    }
-                    
-                    # Clean up the temporary script
-                    Remove-Item -Path $tempScriptPath -Force -ErrorAction SilentlyContinue
-                }
-                
-                if (-not $runAsUserSuccess) {
-                    Write-Warning "Could not set wallpaper directly for logged-in user. Will try registry method."
-                }
-            }
-        } catch {
-            Write-Warning "Error setting wallpaper for logged-in user: $_"
-        }
+        Write-Host "User $username is currently logged in. Will apply wallpaper through registry method."
+        # For logged-in users, we will use registry method only - avoid PsExec due to escaping issues
     }
     
-    # Always attempt registry method as a fallback
+    # Always attempt registry method as the main approach
     $userHive = "$UserProfilePath\NTUSER.DAT"
     $tempKey = "HKU\TempHive"
     
@@ -417,7 +373,13 @@ public class Wallpaper {
         }
         
         # Check if registry hive is already loaded
-        $loadedHives = Get-ChildItem Registry::HKEY_USERS | Where-Object { $_.PSChildName -ne ".DEFAULT" -and $_.PSChildName -ne "S-1-5-18" -and $_.PSChildName -ne "S-1-5-19" -and $_.PSChildName -ne "S-1-5-20" -and $_.PSChildName -match "S-\d-\d+-\d+-\d+" }
+        $loadedHives = Get-ChildItem Registry::HKEY_USERS | Where-Object { 
+            $_.PSChildName -ne ".DEFAULT" -and 
+            $_.PSChildName -ne "S-1-5-18" -and 
+            $_.PSChildName -ne "S-1-5-19" -and 
+            $_.PSChildName -ne "S-1-5-20" -and 
+            $_.PSChildName -match "S-\d-\d+-\d+-\d+" 
+        }
         
         if ($SID -ne "" -and $loadedHives.PSChildName -contains $SID) {
             # If user hive is already loaded, use it directly
@@ -521,7 +483,7 @@ try {
     
     # Log script start with version
     Write-Host "====================================================" -ForegroundColor Cyan
-    Write-Host "Scogo Nexus RMM Wallpaper Deployment Tool v1.1.1" -ForegroundColor Cyan  
+    Write-Host "Scogo Nexus RMM Wallpaper Deployment Tool v1.1.2" -ForegroundColor Cyan  
     Write-Host "Started: $(Get-Date)" -ForegroundColor Cyan
     Write-Host "====================================================" -ForegroundColor Cyan
     
@@ -656,41 +618,60 @@ try {
     # Setup a startup script to reapply the wallpaper when users log in
     try {
         Write-Host "Creating startup script to refresh wallpaper at login..."
-        $escapedWallpaperPath = $wallpaperPath.Replace('\', '\\').Replace('"', '\"')
-        $startupScript = @"
-@echo off
-echo Refreshing wallpaper settings...
-powershell.exe -ExecutionPolicy Bypass -Command "& {
-    # Wait a moment for desktop to initialize
-    Start-Sleep -Seconds 5
-    
+        
+        # Create a separate PS1 file with the refresh logic
+        $refreshScriptPath = Join-Path $wallpaperDir "RefreshWallpaper.ps1"
+        $refreshScriptContent = @"
+# Wallpaper refresh script
+# Created: $(Get-Date)
+
+# Wait a moment for desktop to initialize
+Start-Sleep -Seconds 5
+
+# Define wallpaper path
+`$wallpaperPath = "$wallpaperPath"
+
+# Make sure the wallpaper file exists
+if (Test-Path `$wallpaperPath) {
     # Force refresh desktop
-    Start-Process -FilePath 'C:\Windows\System32\RUNDLL32.EXE' -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -NoNewWindow
-    
-    # Additional refresh for Windows 10/11
-    `$wallpaperPath = '$escapedWallpaperPath'
-    if (Test-Path `$wallpaperPath) {
-        # Use multiple methods to ensure wallpaper is applied
-        Add-Type -TypeDefinition @'
-        using System;
-        using System.Runtime.InteropServices;
-        public class Wallpaper {
-            [DllImport(`"user32.dll`", CharSet = CharSet.Auto)]
-            public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
-        }
+    `$null = Start-Process -FilePath 'C:\Windows\System32\RUNDLL32.EXE' -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -NoNewWindow
+
+    # Use Windows API to set wallpaper
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class Wallpaper {
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
+}
 '@
-        [Wallpaper]::SystemParametersInfo(20, 0, `$wallpaperPath, 3)
-    }
-}"
+    [Wallpaper]::SystemParametersInfo(20, 0, `$wallpaperPath, 3)
+    Write-Host "Wallpaper refreshed successfully."
+} else {
+    Write-Host "Wallpaper file not found at: `$wallpaperPath"
+}
 "@
         
+        # Write the PowerShell script
+        Set-Content -Path $refreshScriptPath -Value $refreshScriptContent -Force
+        
+        # Create a simple batch file that calls the PowerShell script
+        $batchContent = @"
+@echo off
+echo Refreshing wallpaper settings...
+powershell.exe -ExecutionPolicy Bypass -File "$refreshScriptPath"
+"@
+        
+        # Write the batch file to startup folder
         $startupDir = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
         if (-not (Test-Path $startupDir)) {
             New-Item -Path $startupDir -ItemType Directory -Force | Out-Null
         }
         
         $startupFile = Join-Path $startupDir "RefreshWallpaper.bat"
-        Set-Content -Path $startupFile -Value $startupScript -Force
+        Set-Content -Path $startupFile -Value $batchContent -Force
+        
+        Write-Host "✅ Startup script created successfully"
         
         # For Windows 7, we need to create a scheduled task as well (startup scripts sometimes don't work reliably)
         if ($osSettings.IsWindows7) {
