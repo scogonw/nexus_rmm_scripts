@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-echo Scogo Nexus RMM Wallpaper Deployment Tool v1.1.0
+echo Scogo Nexus RMM Wallpaper Deployment Tool v1.1.1
 echo ----------------------------------------------
 
 :: Check for Administrator privileges
@@ -78,7 +78,7 @@ if not exist "%PS_DIR%" (
     )
 )
 
-:: Try to use local script if it exists
+:: Try to use local script if it exists (first priority)
 if exist "%PS_LOCAL_FALLBACK%" (
     echo [INFO] Found local script, copying to: %PS_SCRIPT%
     copy /Y "%PS_LOCAL_FALLBACK%" "%PS_SCRIPT%" >nul
@@ -90,7 +90,14 @@ if exist "%PS_LOCAL_FALLBACK%" (
     )
 )
 
-:: Download the PowerShell script
+:: Check if we already have a copy of the script in the destination
+if exist "%PS_SCRIPT%" (
+    echo [INFO] Found existing script at %PS_SCRIPT%
+    echo [INFO] Will use existing script.
+    goto :run_script
+)
+
+:: Download the PowerShell script (last resort)
 echo [INFO] Downloading PowerShell script from %PS_URL%...
 powershell -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PS_URL%' -OutFile '%PS_SCRIPT%' -TimeoutSec 30; if($?) { Write-Host '[INFO] Download successful.' } } catch { Write-Host '[ERROR] Download failed: ' + $_.Exception.Message; exit 1 } }"
 
@@ -107,8 +114,43 @@ if not exist "%PS_SCRIPT%" (
             exit /b 1
         )
     ) else (
-        echo [ERROR] No local copy found. Exiting.
-        exit /b 1
+        echo [ERROR] No local copy found. Creating a minimal script...
+        
+        :: Create a minimal script that just sets the wallpaper
+        (
+            echo param^([string]$ImageUrl = "https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg", [string]$Style = "Span"^)
+            echo.
+            echo try {
+            echo     Write-Host "Attempting to download and set wallpaper from $ImageUrl"
+            echo     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            echo     $webClient = New-Object System.Net.WebClient
+            echo     $wallpaperPath = "$env:TEMP\corporate-wallpaper.jpg"
+            echo     $webClient.DownloadFile^($ImageUrl, $wallpaperPath^)
+            echo.
+            echo     $code = @'
+            echo     using System;
+            echo     using System.Runtime.InteropServices;
+            echo     public class Wallpaper {
+            echo         [DllImport^("user32.dll", CharSet = CharSet.Auto^)]
+            echo         public static extern int SystemParametersInfo^(int uAction, int uParam, string lpvParam, int fuWinIni^);
+            echo     }
+            echo '@
+            echo.
+            echo     Add-Type -TypeDefinition $code
+            echo     [Wallpaper]::SystemParametersInfo^(20, 0, $wallpaperPath, 3^)
+            echo     Write-Host "Wallpaper set successfully"
+            echo } catch {
+            echo     Write-Host "Error: $_"
+            echo     exit 1
+            echo }
+        ) > "%PS_SCRIPT%"
+        
+        if not exist "%PS_SCRIPT%" (
+            echo [ERROR] Could not create script. Exiting.
+            exit /b 1
+        ) else (
+            echo [INFO] Created minimal script.
+        )
     )
 )
 
@@ -117,13 +159,26 @@ echo [INFO] PowerShell script ready at: %PS_SCRIPT%
 :run_script
 :: Run the PowerShell script with parameters
 echo [INFO] Executing wallpaper script...
-powershell -ExecutionPolicy Bypass -File "%PS_SCRIPT%" -ImageUrl "%IMAGE_URL%" -Style "%STYLE%"
+powershell -ExecutionPolicy Bypass -File "%PS_SCRIPT%" -ImageUrl "%IMAGE_URL%" -Style "%STYLE%" -ErrorAction "Stop"
 set PS_EXIT_CODE=%ERRORLEVEL%
 
 if %PS_EXIT_CODE% EQU 0 (
     echo [SUCCESS] Wallpaper deployment completed successfully.
 ) else (
     echo [ERROR] Wallpaper deployment failed with exit code: %PS_EXIT_CODE%
+    
+    :: Try a direct method as a last resort
+    echo [INFO] Attempting fallback method...
+    powershell -ExecutionPolicy Bypass -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $client = New-Object System.Net.WebClient; $wallpaperPath = \"$env:TEMP\corporate-wallpaper.jpg\"; $client.DownloadFile(\"%IMAGE_URL%\", $wallpaperPath); Add-Type -TypeDefinition \"using System;using System.Runtime.InteropServices;public class Wallpaper{[DllImport(\\\"user32.dll\\\")]public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);}\"; [Wallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3); Write-Host '[SUCCESS] Fallback method successful.'; } catch { Write-Host '[ERROR] Fallback method failed: ' + $_.Exception.Message; exit 1 } }"
+    set PS_FALLBACK_CODE=%ERRORLEVEL%
+    
+    if %PS_FALLBACK_CODE% EQU 0 (
+        echo [SUCCESS] Wallpaper set using fallback method.
+        exit /b 0
+    ) else (
+        echo [ERROR] All methods failed. Unable to set wallpaper.
+        exit /b %PS_EXIT_CODE%
+    )
 )
 
 exit /b %PS_EXIT_CODE%
