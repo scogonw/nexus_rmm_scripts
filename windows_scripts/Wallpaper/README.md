@@ -15,6 +15,7 @@ This set of scripts allows you to automatically deploy and enforce a corporate w
 - Special handling for currently logged-in users
 - Validates downloaded image files for security
 - Robust error handling and recovery mechanisms
+- Multiple fallback methods if script or image download fails
 
 ## Files
 
@@ -106,9 +107,10 @@ The script includes multiple methods to set the wallpaper to ensure compatibilit
 
 1. Windows API via `SystemParametersInfo` - Primary method for immediate effect
 2. Registry modification for each user profile - For persistence across sessions
-3. Direct manipulation for currently logged-in users (using PsExec if available)
+3. Direct manipulation for currently logged-in users via temporary script files
 4. Startup script to ensure settings persist after reboot
 5. Scheduled task for Windows 7 compatibility
+6. Last-resort inline PowerShell command if all else fails
 
 ### Error Handling
 
@@ -120,6 +122,8 @@ The script includes robust error handling:
 - Multiple fallback methods for script retrieval
 - Detailed logging with status messages
 - Exit code reporting for monitoring systems
+- Script generation fallback if download fails
+- Better string escaping to prevent parsing errors
 
 ## Compatibility
 
@@ -130,6 +134,7 @@ The script is compatible with:
 - Domain-joined and workgroup computers
 - Systems with multiple users
 - Systems with or without internet access (if script is available locally)
+- All PowerShell versions (including older versions with stricter parsing)
 
 ## Customization
 
@@ -172,6 +177,7 @@ If you need to adjust how wallpaper changes are blocked, modify the `Block-Wallp
 - Check your internet connection
 - Verify the PowerShell execution policy allows script execution
 - Try running with the local script by placing `set_wallpaper.ps1` in the same directory
+- Check if PowerShell is installed and accessible
 
 ### Wallpaper Not Applied
 
@@ -189,6 +195,13 @@ If you see registry-related errors:
 - Verify the script is running with administrative privileges
 - In extreme cases, a system restart may be needed to unlock registry hives
 
+### PsExec Issues
+
+If you see errors related to PsExec:
+- In v1.1.1, we've simplified the approach to avoid complex string escaping issues
+- Now using temporary script files instead of complex inline commands
+- You don't need to have PsExec installed, as the script will fall back to registry methods
+
 ## Security Considerations
 
 - The script requires administrative privileges to modify registry settings
@@ -197,6 +210,7 @@ If you see registry-related errors:
 - Downloaded images are validated before being applied
 - The script runs with minimum required privileges
 - No sensitive information is collected or transmitted
+- Temporary script files are cleaned up after use
 
 ## Deployment Options
 
@@ -229,3 +243,4 @@ For RMM tools, create a script that:
 
 - v1.0.0: Initial release
 - v1.1.0: Added improved error handling, domain support, and Windows version detection
+- v1.1.1: Fixed string escaping issues, improved fallback methods, added better error handling and reporting

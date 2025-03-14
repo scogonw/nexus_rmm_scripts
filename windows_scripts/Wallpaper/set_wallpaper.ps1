@@ -12,7 +12,7 @@
 .LINK
 	https://github.com/fleschutz/PowerShell
 .NOTES
-	Author: Markus Fleschutz | License: CC0
+	Author: Karan Singh | License: MIT
 	Modified for Scogo Nexus RMM
 	Version: 1.1.0
 #>
@@ -368,11 +368,32 @@ function Set-WallpaperForUser {
                 $psexecPath = "$env:ProgramFiles\Sysinternals\PsExec.exe"
                 if (Test-Path $psexecPath) {
                     Write-Host "Using PsExec to set wallpaper for logged-in user..."
-                    $wallpaperCmd = "powershell.exe -Command '& { Add-Type -TypeDefinition \"\"\"using System;using System.Runtime.InteropServices;public class Wallpaper {[DllImport(\"\"user32.dll\"\", CharSet = CharSet.Auto)]public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);}\"\"\" ; [Wallpaper]::SystemParametersInfo(20, 0, \"\"$ImagePath\"\", 3) }'"
-                    & $psexecPath -i -u $username -accepteula -h $wallpaperCmd 2>$null
+                    
+                    # Create a temporary script file instead of trying to escape complex commands
+                    $tempScriptPath = Join-Path $env:TEMP "SetWallpaper_$username.ps1"
+                    $escapedImagePath = $ImagePath.Replace('\', '\\').Replace("'", "\'")
+                    $tempScriptContent = @"
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class Wallpaper {
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
+}
+'@
+[Wallpaper]::SystemParametersInfo(20, 0, '$escapedImagePath', 3)
+"@
+                    Set-Content -Path $tempScriptPath -Value $tempScriptContent -Force
+                    
+                    # Run the temporary script via PsExec
+                    & $psexecPath -i -u $username -accepteula -h powershell.exe -ExecutionPolicy Bypass -File "$tempScriptPath" 2>$null
                     if ($LASTEXITCODE -eq 0) {
                         $runAsUserSuccess = $true
+                        Write-Host "Successfully set wallpaper for logged-in user via PsExec"
                     }
+                    
+                    # Clean up the temporary script
+                    Remove-Item -Path $tempScriptPath -Force -ErrorAction SilentlyContinue
                 }
                 
                 if (-not $runAsUserSuccess) {
@@ -494,70 +515,149 @@ function Get-WindowsVersionSpecificSettings {
 
 # Main execution starts here
 try {
+    # Set error action preference to stop on all errors to improve logging
+    $ErrorActionPreference = "Stop"
+    $VerbosePreference = "Continue"
+    
+    # Log script start with version
+    Write-Host "====================================================" -ForegroundColor Cyan
+    Write-Host "Scogo Nexus RMM Wallpaper Deployment Tool v1.1.1" -ForegroundColor Cyan  
+    Write-Host "Started: $(Get-Date)" -ForegroundColor Cyan
+    Write-Host "====================================================" -ForegroundColor Cyan
+    
     # Ensure script is running as administrator
     if (-not (Test-Admin)) {
         Write-Error "This script must be run as Administrator. Please restart with administrator privileges."
         exit 1
     }
     
-    Write-Host "Starting wallpaper deployment script (v1.1.0)" -ForegroundColor Cyan
-    
     # Get OS version specific settings
-    $osSettings = Get-WindowsVersionSpecificSettings()
+    try {
+        $osSettings = Get-WindowsVersionSpecificSettings()
+    } catch {
+        Write-Warning "Error detecting Windows version: $_. Will use default settings."
+        $osSettings = @{
+            IsWindows7 = $false
+            IsWindows8 = $false
+            IsWindows10OrLater = $true
+        }
+    }
     
     # Check if machine is domain joined
-    $isDomainJoined = Test-DomainJoined
-    if ($isDomainJoined) {
-        Write-Host "Machine is domain-joined. Will handle domain user profiles appropriately."
+    try {
+        $isDomainJoined = Test-DomainJoined
+        if ($isDomainJoined) {
+            Write-Host "Machine is domain-joined. Will handle domain user profiles appropriately."
+        }
+    } catch {
+        Write-Warning "Error detecting domain status: $_. Will assume workgroup computer."
+        $isDomainJoined = $false
     }
     
     # Create a permanent directory for the wallpaper if it doesn't exist
     $wallpaperDir = "C:\ProgramData\Scogo\Wallpaper"
     if (-not (Test-Path $wallpaperDir)) {
         Write-Host "Creating wallpaper directory at $wallpaperDir"
-        New-Item -Path $wallpaperDir -ItemType Directory -Force | Out-Null
+        try {
+            New-Item -Path $wallpaperDir -ItemType Directory -Force | Out-Null
+        } catch {
+            Write-Warning "Error creating directory: $_. Will use temporary directory."
+            $wallpaperDir = Join-Path $env:TEMP "Scogo\Wallpaper"
+            New-Item -Path $wallpaperDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+        }
     }
     
     # Set appropriate permissions on the directory to ensure all users can access it
-    $acl = Get-Acl $wallpaperDir
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("Users", "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow")
-    $acl.SetAccessRule($rule)
-    Set-Acl $wallpaperDir $acl
+    try {
+        $acl = Get-Acl $wallpaperDir
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("Users", "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow")
+        $acl.SetAccessRule($rule)
+        Set-Acl $wallpaperDir $acl
+    } catch {
+        Write-Warning "Could not set permissions on directory: $_. Wallpaper may not be accessible to all users."
+    }
     
     # Download the wallpaper
     $wallpaperPath = Join-Path $wallpaperDir "corporate-wallpaper.jpg"
-    $downloadSuccess = Download-File -Url $ImageUrl -OutputPath $wallpaperPath
+    $downloadSuccess = $false
+    
+    try {
+        $downloadSuccess = Download-File -Url $ImageUrl -OutputPath $wallpaperPath
+    } catch {
+        Write-Error "Error during download: $_"
+    }
     
     if (-not $downloadSuccess) {
-        Write-Error "Failed to download wallpaper. Exiting."
-        exit 1
+        # Try to use a locally cached copy if available
+        $localCopy = Join-Path $PSScriptRoot "corporate-wallpaper.jpg"
+        if (Test-Path $localCopy) {
+            Write-Host "Using locally cached wallpaper image."
+            try {
+                Copy-Item -Path $localCopy -Destination $wallpaperPath -Force
+                $downloadSuccess = Test-Path $wallpaperPath
+            } catch {
+                Write-Error "Failed to copy local wallpaper: $_. Exiting."
+                exit 1
+            }
+        } else {
+            Write-Error "Failed to download wallpaper and no local copy found. Exiting."
+            exit 1
+        }
     }
     
     # Apply wallpaper for the current user first
     Write-Host "Setting wallpaper for current user..."
-    $success = SetWallPaperWithFallback -ImagePath $wallpaperPath -Style $Style
-    
-    if ($success) {
-        Write-Host "✅ Wallpaper set for current user"
-    } else {
-        Write-Warning "Failed to set wallpaper for current user using direct method. Will try registry method."
+    $currentUserSuccess = $false
+    try {
+        $currentUserSuccess = SetWallPaperWithFallback -ImagePath $wallpaperPath -Style $Style
+        
+        if ($currentUserSuccess) {
+            Write-Host "✅ Wallpaper set for current user"
+        } else {
+            Write-Warning "Failed to set wallpaper for current user using direct method. Will try registry method."
+        }
+    } catch {
+        Write-Warning "Error setting wallpaper for current user: $_"
     }
     
     # Block users from changing the wallpaper
-    Block-WallpaperChanges
-    
-    # Then set it for all human users
-    $userProfiles = Get-HumanUserProfiles
-    foreach ($profile in $userProfiles) {
-        $profilePath = $profile.Path
-        $sid = $profile.SID
-        
-        Set-WallpaperForUser -UserProfilePath $profilePath -ImagePath $wallpaperPath -Style $Style -SID $sid
+    $blockSuccess = $false
+    try {
+        $blockSuccess = Block-WallpaperChanges
+    } catch {
+        Write-Warning "Error blocking wallpaper changes: $_"
     }
     
+    # Then set it for all human users
+    $userProfiles = @()
+    try {
+        $userProfiles = Get-HumanUserProfiles
+    } catch {
+        Write-Warning "Error getting user profiles: $_"
+    }
+    
+    $userSuccessCount = 0
+    foreach ($profile in $userProfiles) {
+        try {
+            $profilePath = $profile.Path
+            $sid = $profile.SID
+            
+            $success = Set-WallpaperForUser -UserProfilePath $profilePath -ImagePath $wallpaperPath -Style $Style -SID $sid
+            if ($success) {
+                $userSuccessCount++
+            }
+        } catch {
+            Write-Warning "Error processing user profile $($profile.Path): $_"
+        }
+    }
+    
+    Write-Host "Successfully set wallpaper for $userSuccessCount out of $($userProfiles.Count) users."
+    
     # Setup a startup script to reapply the wallpaper when users log in
-    Write-Host "Creating startup script to refresh wallpaper at login..."
-    $startupScript = @"
+    try {
+        Write-Host "Creating startup script to refresh wallpaper at login..."
+        $escapedWallpaperPath = $wallpaperPath.Replace('\', '\\').Replace('"', '\"')
+        $startupScript = @"
 @echo off
 echo Refreshing wallpaper settings...
 powershell.exe -ExecutionPolicy Bypass -Command "& {
@@ -568,47 +668,71 @@ powershell.exe -ExecutionPolicy Bypass -Command "& {
     Start-Process -FilePath 'C:\Windows\System32\RUNDLL32.EXE' -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -NoNewWindow
     
     # Additional refresh for Windows 10/11
-    $([char]36)wallpaperPath = '$wallpaperPath'
-    if (Test-Path $([char]36)wallpaperPath) {
+    `$wallpaperPath = '$escapedWallpaperPath'
+    if (Test-Path `$wallpaperPath) {
         # Use multiple methods to ensure wallpaper is applied
         Add-Type -TypeDefinition @'
         using System;
         using System.Runtime.InteropServices;
         public class Wallpaper {
-            [DllImport(\"user32.dll\", CharSet = CharSet.Auto)]
+            [DllImport(`"user32.dll`", CharSet = CharSet.Auto)]
             public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
         }
 '@
-        [Wallpaper]::SystemParametersInfo(20, 0, $([char]36)wallpaperPath, 3)
+        [Wallpaper]::SystemParametersInfo(20, 0, `$wallpaperPath, 3)
     }
 }"
 "@
-    
-    $startupDir = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
-    $startupFile = Join-Path $startupDir "RefreshWallpaper.bat"
-    Set-Content -Path $startupFile -Value $startupScript -Force
-    
-    # For Windows 7, we need to create a scheduled task as well (startup scripts sometimes don't work reliably)
-    if ($osSettings.IsWindows7) {
-        Write-Host "Creating scheduled task for Windows 7 compatibility..."
-        $taskName = "RefreshCorporateWallpaper"
-        $taskAction = New-ScheduledTaskAction -Execute "C:\Windows\System32\cmd.exe" -Argument "/c `"$startupFile`""
-        $taskTrigger = New-ScheduledTaskTrigger -AtLogOn
-        $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-        $taskPrincipal = New-ScheduledTaskPrincipal -GroupId "Users" -RunLevel Highest
         
-        # Remove task if it exists
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+        $startupDir = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
+        if (-not (Test-Path $startupDir)) {
+            New-Item -Path $startupDir -ItemType Directory -Force | Out-Null
+        }
         
-        # Create the task
-        Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal
+        $startupFile = Join-Path $startupDir "RefreshWallpaper.bat"
+        Set-Content -Path $startupFile -Value $startupScript -Force
+        
+        # For Windows 7, we need to create a scheduled task as well (startup scripts sometimes don't work reliably)
+        if ($osSettings.IsWindows7) {
+            try {
+                Write-Host "Creating scheduled task for Windows 7 compatibility..."
+                $taskName = "RefreshCorporateWallpaper"
+                $taskAction = New-ScheduledTaskAction -Execute "C:\Windows\System32\cmd.exe" -Argument "/c `"$startupFile`""
+                $taskTrigger = New-ScheduledTaskTrigger -AtLogOn
+                $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+                $taskPrincipal = New-ScheduledTaskPrincipal -GroupId "Users" -RunLevel Highest
+                
+                # Remove task if it exists
+                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+                
+                # Create the task
+                Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal
+            } catch {
+                Write-Warning "Error creating scheduled task: $_"
+            }
+        }
+    } catch {
+        Write-Warning "Error creating startup script: $_"
     }
     
     # Refresh desktop to apply changes immediately
-    Write-Host "Refreshing desktop settings..."
-    & rundll32.exe user32.dll,UpdatePerUserSystemParameters
+    try {
+        Write-Host "Refreshing desktop settings..."
+        & rundll32.exe user32.dll,UpdatePerUserSystemParameters
+    } catch {
+        Write-Warning "Error refreshing desktop: $_"
+    }
     
-    Write-Host "✅ Wallpaper deployment completed successfully" -ForegroundColor Green
+    # Summary
+    Write-Host "====================================================" -ForegroundColor Green
+    Write-Host "Wallpaper deployment summary:" -ForegroundColor Green
+    Write-Host "- Wallpaper downloaded: $downloadSuccess" -ForegroundColor Green
+    Write-Host "- Current user applied: $currentUserSuccess" -ForegroundColor Green
+    Write-Host "- User profiles updated: $userSuccessCount out of $($userProfiles.Count)" -ForegroundColor Green
+    Write-Host "- Wallpaper changes blocked: $blockSuccess" -ForegroundColor Green
+    Write-Host "- Script completed: $(Get-Date)" -ForegroundColor Green
+    Write-Host "====================================================" -ForegroundColor Green
+    
     exit 0 # success
 } catch {
     Write-Host "⚠️ Error in line $($_.InvocationInfo.ScriptLineNumber): $($Error[0])" -ForegroundColor Red
