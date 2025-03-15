@@ -148,29 +148,74 @@ $DefaultPassword = "scogo@007"
 $SecurePassword = ConvertTo-SecureString $DefaultPassword -AsPlainText -Force
 Write-Log "INFO" "Using default password for new user $Username"
 
-# Create the user account
+# Try to determine which method to use for user creation
+$UseNewLocalUser = $true
 try {
-    if ($FullName -ne "") {
-        Write-Log "INFO" "Creating user $Username with full name: $FullName"
-        $User = New-LocalUser -Name $Username -Password $SecurePassword -FullName $FullName -Description "Created by Nexus RMM" -PasswordNeverExpires $false -AccountNeverExpires -UserMayNotChangePassword $false -ErrorAction Stop
-    } else {
-        Write-Log "INFO" "Creating user $Username"
-        $User = New-LocalUser -Name $Username -Password $SecurePassword -Description "Created by Nexus RMM" -PasswordNeverExpires $false -AccountNeverExpires -UserMayNotChangePassword $false -ErrorAction Stop
-    }
+    # Test if New-LocalUser cmdlet is available
+    Get-Command New-LocalUser -ErrorAction Stop | Out-Null
 } catch {
-    # Fallback for older Windows versions that don't have New-LocalUser cmdlet
+    $UseNewLocalUser = $false
+    Write-Log "INFO" "New-LocalUser cmdlet not available, using ADSI instead"
+}
+
+# Create the user account
+if ($UseNewLocalUser) {
+    # Modern approach
     try {
+        $NewUserParams = @{
+            Name = $Username
+            Password = $SecurePassword
+            Description = "Created by Nexus RMM"
+            PasswordNeverExpires = $false
+            AccountNeverExpires = $true
+            UserMayNotChangePassword = $false
+            ErrorAction = "Stop"
+        }
+        
+        # Only add FullName if it's provided
+        if ($FullName -ne "") {
+            $NewUserParams.Add("FullName", $FullName)
+        }
+        
+        Write-Log "INFO" "Creating user $Username with New-LocalUser cmdlet"
+        $User = New-LocalUser @NewUserParams
+    } catch {
+        Write-Log "ERROR" "Failed to create user with New-LocalUser: $_"
+        $UseNewLocalUser = $false
+    }
+}
+
+# Fallback to ADSI if New-LocalUser failed or isn't available
+if (-not $UseNewLocalUser) {
+    try {
+        Write-Log "INFO" "Creating user $Username with ADSI (legacy method)"
         $Computer = [ADSI]"WinNT://$env:COMPUTERNAME,computer"
         $User = $Computer.Create("user", $Username)
         
         # Set the password
         $User.SetPassword($DefaultPassword)
         
+        # Different ways to set the full name (for compatibility)
         if ($FullName -ne "") {
-            $User.FullName = $FullName
+            try {
+                # Method 1: Using net user command
+                Start-Process -FilePath "net" -ArgumentList "user $Username /fullname:`"$FullName`"" -NoNewWindow -Wait
+                Write-Log "INFO" "Set fullname using net user command"
+            } catch {
+                Write-Log "WARNING" "Could not set fullname using net user: $_"
+                
+                try {
+                    # Method 2: Using Put method (safer than direct property assignment)
+                    $User.Put("FullName", $FullName)
+                    Write-Log "INFO" "Set fullname using Put method"
+                } catch {
+                    Write-Log "WARNING" "Could not set fullname using Put method: $_"
+                }
+            }
         }
+        
+        # Set description and commit changes
         $User.Description = "Created by Nexus RMM"
-        $User.UserFlags = 0  # Reset flags
         $User.SetInfo()
         
         Write-Log "INFO" "User created using legacy WinNT provider"
@@ -183,13 +228,18 @@ try {
 
 # Set password to expire immediately (force change at next login)
 try {
-    # Method 1: Using built-in cmdlet (newer systems)
-    Set-LocalUser -Name $Username -PasswordNeverExpires $false -ErrorAction SilentlyContinue
+    if ($UseNewLocalUser) {
+        # Method 1: Using built-in cmdlet (newer systems)
+        Set-LocalUser -Name $Username -PasswordNeverExpires $false -ErrorAction SilentlyContinue
+    }
     
-    # Method 2: Using WinNT provider (older systems)
+    # Method 2: Using WinNT provider (works on all systems)
     $UserAccount = [ADSI]"WinNT://$env:COMPUTERNAME/$Username,user"
     $UserAccount.PasswordExpired = 1
     $UserAccount.SetInfo()
+    
+    # Method 3: Using net user command (most reliable)
+    Start-Process -FilePath "net" -ArgumentList "user $Username /logonpasswordchg:yes" -NoNewWindow -Wait
     
     Write-Log "INFO" "Password set to expire - user must change at next login"
 } catch {
@@ -199,35 +249,81 @@ try {
 
 # Add user to administrators group if requested
 if ($IsAdmin) {
+    $AdminAddSuccess = $false
+    
     try {
         # Method 1: Using built-in cmdlet (newer systems)
-        Add-LocalGroupMember -Group "Administrators" -Member $Username -ErrorAction SilentlyContinue
-        
-        # Method 2: Using WinNT provider (older systems)
-        $Group = [ADSI]"WinNT://$env:COMPUTERNAME/Administrators,group"
-        $Group.Add("WinNT://$env:COMPUTERNAME/$Username,user")
-        
-        Write-Log "INFO" "Added user $Username to Administrators group"
+        if ($UseNewLocalUser) {
+            Add-LocalGroupMember -Group "Administrators" -Member $Username -ErrorAction Stop
+            $AdminAddSuccess = $true
+            Write-Log "INFO" "Added user to Administrators group using Add-LocalGroupMember"
+        }
     } catch {
-        Write-Log "WARNING" "Failed to add user $Username to Administrators group: $_"
-        Write-Host "WARNING: Failed to add user $Username to Administrators group." -ForegroundColor Yellow
+        Write-Log "WARNING" "Could not add to Administrators using Add-LocalGroupMember: $_"
+    }
+    
+    if (-not $AdminAddSuccess) {
+        try {
+            # Method 2: Using WinNT provider
+            $Group = [ADSI]"WinNT://$env:COMPUTERNAME/Administrators,group"
+            $Group.Add("WinNT://$env:COMPUTERNAME/$Username,user")
+            $AdminAddSuccess = $true
+            Write-Log "INFO" "Added user to Administrators group using ADSI"
+        } catch {
+            Write-Log "WARNING" "Could not add to Administrators using ADSI: $_"
+        }
+    }
+    
+    if (-not $AdminAddSuccess) {
+        try {
+            # Method 3: Using net localgroup command (most reliable)
+            Start-Process -FilePath "net" -ArgumentList "localgroup Administrators $Username /add" -NoNewWindow -Wait
+            $AdminAddSuccess = $true
+            Write-Log "INFO" "Added user to Administrators group using net localgroup"
+        } catch {
+            Write-Log "WARNING" "Failed to add user $Username to Administrators group: $_"
+            Write-Host "WARNING: Failed to add user $Username to Administrators group." -ForegroundColor Yellow
+        }
     }
 }
 
-# Output results
-Write-Host "`nSUCCESS: User $Username created successfully." -ForegroundColor Green
-Write-Log "INFO" "User $Username created successfully"
+# Verify user was created
+$UserCreated = $false
+try {
+    # Try modern method first
+    Get-LocalUser -Name $Username -ErrorAction Stop | Out-Null
+    $UserCreated = $true
+} catch {
+    # Fall back to net user
+    try {
+        $NetUserResult = (net user $Username 2>&1)
+        if ($NetUserResult -match $Username) {
+            $UserCreated = $true
+        }
+    } catch {
+        Write-Log "WARNING" "Could not verify user creation: $_"
+    }
+}
 
-# Display summary
-Write-Host "User details:" -ForegroundColor Cyan
-Write-Host "  Username: $Username"
-if ($FullName -ne "") {
-    Write-Host "  Full name: $FullName"
-}
-if ($IsAdmin) {
-    Write-Host "  Admin privileges: Yes (Administrators group)"
+if ($UserCreated) {
+    # Output results
+    Write-Host "`nSUCCESS: User $Username created successfully." -ForegroundColor Green
+    Write-Log "INFO" "User $Username created successfully"
+    
+    # Display summary
+    Write-Host "User details:" -ForegroundColor Cyan
+    Write-Host "  Username: $Username"
+    if ($FullName -ne "") {
+        Write-Host "  Full name: $FullName"
+    }
+    if ($IsAdmin) {
+        Write-Host "  Admin privileges: Yes (Administrators group)"
+    } else {
+        Write-Host "  Admin privileges: No"
+    }
+    Write-Host "  Password: Default password set (scogo@007)"
+    Write-Host "  Password status: Must be changed at first login"
 } else {
-    Write-Host "  Admin privileges: No"
-}
-Write-Host "  Password: Default password set (scogo@007)"
-Write-Host "  Password status: Must be changed at first login" 
+    Write-Host "WARNING: User creation could not be verified." -ForegroundColor Yellow
+    Write-Log "WARNING" "User creation could not be verified"
+} 
