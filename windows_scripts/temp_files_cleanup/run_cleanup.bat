@@ -21,7 +21,7 @@ mkdir "%TEMP_DIR%" 2>nul
 
 REM Set script paths and URL
 set "PS_SCRIPT=%TEMP_DIR%\cleanup.ps1"
-set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/temporary_files_cleanup.ps1"
+set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/Windows_Scripts/temporary_files_cleanup.ps1"
 
 echo Downloading cleanup script...
 powershell -Command "(New-Object Net.WebClient).DownloadFile('%PS_URL%', '%PS_SCRIPT%')"

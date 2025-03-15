@@ -104,7 +104,7 @@ For centralized management, you can configure the batch script to download the m
 
 1. Uncomment and update the URL in the batch file:
 ```batch
-set "PS_URL=https://raw.githubusercontent.com/YOUR_ORG/nexus_rmm_scripts/main/windows_scripts/User_Management/create_user_windows.ps1"
+set "PS_URL=https://raw.githubusercontent.com/YOUR_ORG/nexus_rmm_scripts/main/Windows_Scripts/User_Management/create_user_windows.ps1"
 ```
 
 2. Uncomment the download section:

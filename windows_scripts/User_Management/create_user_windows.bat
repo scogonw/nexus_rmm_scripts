@@ -40,7 +40,7 @@ set "TEMP_DIR=%TEMP%\UserMgmt_%RANDOM%"
 mkdir "%TEMP_DIR%" 2>nul
 
 :: Configure script paths and URLs
-set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/User_Management/create_user_windows.ps1"
+set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/Windows_Scripts/User_Management/create_user_windows.ps1"
 set "PS_SCRIPT=%TEMP_DIR%\create_user_windows.ps1"
 set "LOCAL_PS_SCRIPT=%~dp0create_user_windows.ps1"
 

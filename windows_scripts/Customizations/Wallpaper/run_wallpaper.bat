@@ -62,7 +62,7 @@ echo [INFO] This may take a moment...
 :: Define local paths with fallbacks
 set "PS_DIR=%ProgramData%\Scogo\Wallpaper"
 set "PS_SCRIPT=%PS_DIR%\set_wallpaper.ps1"
-set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/Wallpaper/set_wallpaper.ps1"
+set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/Windows_Scripts/Customizations/Wallpaper/set_wallpaper.ps1"
 set "PS_LOCAL_FALLBACK=%~dp0set_wallpaper.ps1"
 set "LOCAL_IMAGE=%PS_DIR%\corporate-wallpaper.jpg"
 
