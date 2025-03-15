@@ -40,7 +40,6 @@ set "TEMP_DIR=%TEMP%\UserMgmt_%RANDOM%"
 mkdir "%TEMP_DIR%" 2>nul
 
 :: Configure script paths and URLs
-:: Uncomment and modify this URL if you want to download the script from a repository
 set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/User_Management/create_user_windows.ps1"
 set "PS_SCRIPT=%TEMP_DIR%\create_user_windows.ps1"
 set "LOCAL_PS_SCRIPT=%~dp0create_user_windows.ps1"
@@ -51,22 +50,20 @@ if exist "%LOCAL_PS_SCRIPT%" (
     copy "%LOCAL_PS_SCRIPT%" "%PS_SCRIPT%" >nul
     echo Using local PowerShell script...
 ) else (
-    :: Uncomment this section if you want to download the script
-    :: echo Downloading user management script...
-    :: powershell -Command "(New-Object Net.WebClient).DownloadFile('%PS_URL%', '%PS_SCRIPT%')"
-    ::
-    :: if not exist "%PS_SCRIPT%" (
-    ::     echo ERROR: Failed to download the PowerShell script.
-    ::     echo Please check your internet connection and try again.
-    ::     echo %date% %time% [ERROR] Failed to download PowerShell script >> "%LOG_FILE%"
-    ::     rd /s /q "%TEMP_DIR%" 2>nul
-    ::     exit /b 1
-    :: )
+    echo Downloading user management script...
+    echo %date% %time% [INFO] Downloading PowerShell script from repository >> "%LOG_FILE%"
     
-    echo ERROR: PowerShell script not found at %LOCAL_PS_SCRIPT%
-    echo %date% %time% [ERROR] PowerShell script not found >> "%LOG_FILE%"
-    rd /s /q "%TEMP_DIR%" 2>nul
-    exit /b 1
+    powershell -Command "try { (New-Object Net.WebClient).DownloadFile('%PS_URL%', '%PS_SCRIPT%'); Write-Host 'Download successful.' } catch { Write-Host 'Error downloading file: ' + $_.Exception.Message; exit 1 }"
+    
+    if not exist "%PS_SCRIPT%" (
+        echo ERROR: Failed to download the PowerShell script.
+        echo Please check your internet connection and try again.
+        echo %date% %time% [ERROR] Failed to download PowerShell script >> "%LOG_FILE%"
+        rd /s /q "%TEMP_DIR%" 2>nul
+        exit /b 1
+    )
+    
+    echo PowerShell script successfully downloaded.
 )
 
 :: Process parameters to pass to PowerShell script
@@ -76,25 +73,41 @@ set "PS_PARAMS="
 if "%~1"=="" goto :execute_script
 
 if /i "%~1"=="-u" (
-    set "PS_PARAMS=!PS_PARAMS! -Username %~2"
+    if "%~2"=="" (
+        echo ERROR: Username parameter requires a value
+        goto :display_help
+    )
+    set "PS_PARAMS=!PS_PARAMS! -Username "%~2""
     shift
     shift
     goto :parse_args
 )
 if /i "%~1"=="--username" (
-    set "PS_PARAMS=!PS_PARAMS! -Username %~2"
+    if "%~2"=="" (
+        echo ERROR: Username parameter requires a value
+        goto :display_help
+    )
+    set "PS_PARAMS=!PS_PARAMS! -Username "%~2""
     shift
     shift
     goto :parse_args
 )
 if /i "%~1"=="-f" (
-    set "PS_PARAMS=!PS_PARAMS! -FullName %~2"
+    if "%~2"=="" (
+        echo ERROR: Fullname parameter requires a value
+        goto :display_help
+    )
+    set "PS_PARAMS=!PS_PARAMS! -FullName "%~2""
     shift
     shift
     goto :parse_args
 )
 if /i "%~1"=="--fullname" (
-    set "PS_PARAMS=!PS_PARAMS! -FullName %~2"
+    if "%~2"=="" (
+        echo ERROR: Fullname parameter requires a value
+        goto :display_help
+    )
+    set "PS_PARAMS=!PS_PARAMS! -FullName "%~2""
     shift
     shift
     goto :parse_args
@@ -122,6 +135,12 @@ shift
 goto :parse_args
 
 :execute_script
+:: Check if we have any parameters
+if "!PS_PARAMS!"=="" (
+    echo ERROR: Required parameters missing.
+    goto :display_help
+)
+
 :: Execute the PowerShell script with appropriate parameters
 echo Executing PowerShell script with parameters: %PS_PARAMS%
 echo %date% %time% [INFO] Executing PowerShell script with parameters: %PS_PARAMS% >> "%LOG_FILE%"
