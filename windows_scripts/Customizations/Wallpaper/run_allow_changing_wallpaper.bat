@@ -22,7 +22,7 @@ if %ERRORLEVEL% NEQ 0 (
 set "PS_DIR=%ProgramData%\Scogo\Wallpaper"
 set "PS_SCRIPT=%PS_DIR%\allow_changing_wallpaper.ps1"
 set "PS_LOCAL_FALLBACK=%~dp0allow_changing_wallpaper.ps1"
-set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/Wallpaper/allow_changing_wallpaper.ps1"
+set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/Windows_Scripts/Customizations/Wallpaper/allow_changing_wallpaper.ps1"
 
 :: Create directory if it doesn't exist
 if not exist "%PS_DIR%" (

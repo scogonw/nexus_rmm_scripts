@@ -13,7 +13,7 @@ This repository contains a collection of scripts designed for remote management 
   - **User_Management/** - User account creation and management
   - **Misc/** - Miscellaneous utilities
 
-- **windows_scripts/** - Scripts for Windows systems
+- **Windows_Scripts/** - Scripts for Windows systems
   - **Customizations/** - UI and experience customizations
     - **Wallpaper/** - Desktop wallpaper management
   - **temp_files_cleanup/** - System cleanup utilities
