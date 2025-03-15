@@ -41,7 +41,7 @@ mkdir "%TEMP_DIR%" 2>nul
 
 :: Configure script paths and URLs
 :: Uncomment and modify this URL if you want to download the script from a repository
-:: set "PS_URL=https://raw.githubusercontent.com/YOUR_ORG/nexus_rmm_scripts/main/windows_scripts/User_Management/create_user_windows.ps1"
+set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/User_Management/create_user_windows.ps1"
 set "PS_SCRIPT=%TEMP_DIR%\create_user_windows.ps1"
 set "LOCAL_PS_SCRIPT=%~dp0create_user_windows.ps1"
 
