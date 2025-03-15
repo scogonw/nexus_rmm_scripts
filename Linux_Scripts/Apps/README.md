@@ -25,6 +25,7 @@ The `app_store_manager.sh` script allows system administrators to control which 
 - **Status checking**: View current permission status for all users
 - **Preserves browsing**: Users can still browse available software, but cannot install without permission
 - **Debugging mode**: Enhanced logging for troubleshooting issues
+- **Login-safe restrictions**: Uses methods that don't interfere with system login scripts
 
 ## Requirements
 
@@ -94,7 +95,7 @@ sudo ./app_store_manager.sh --debug --deny
 The script uses different methods to restrict software installation based on the package manager:
 
 - **APT/DNF/YUM**: Uses sudoers rules to prevent execution of package management commands
-- **Flatpak**: Controls access via group permissions and PolicyKit rules
+- **Flatpak**: Uses PolicyKit and D-Bus policy restrictions without modifying system binaries
 - **Snap**: Restricts access to the snap binary, socket and applies PolicyKit rules
 - **GNOME Software/Ubuntu Software Center**: Uses dconf settings to disable installation capabilities and adds PolicyKit rules to require admin authentication
 - **KDE Discover**: Uses PolicyKit rules to require admin authentication
@@ -156,5 +157,6 @@ Some distributions may use different paths or methods for package management. Ch
 
 ## Version History
 
+- v1.2.0: Updated Flatpak restrictions to use PolicyKit and D-Bus policies instead of file permissions
 - v1.1.0: Added debug mode and improved Zorin OS support
 - v1.0.0: Initial release

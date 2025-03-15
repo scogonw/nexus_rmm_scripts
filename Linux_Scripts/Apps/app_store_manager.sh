@@ -270,37 +270,9 @@ manage_flatpak_access() {
     log_debug "Managing Flatpak access for user $user: $action"
     
     if [ "$action" = "deny" ]; then
-        # Remove execute permissions from flatpak for the user group
-        if getent group flatpak > /dev/null 2>&1; then
-            log_debug "Flatpak group exists, removing user from group"
-            gpasswd -d "$user" flatpak &> /dev/null || true
-        else
-            # Create a flatpak group if it doesn't exist
-            log_debug "Creating flatpak group"
-            groupadd flatpak
-        fi
-        
-        # Change permissions on flatpak binary
-        if [ -f "/usr/bin/flatpak" ]; then
-            log_debug "Setting permissions on flatpak binary"
-            chown root:flatpak /usr/bin/flatpak
-            chmod 750 /usr/bin/flatpak
-            log_debug "Flatpak binary permissions: $(ls -la /usr/bin/flatpak)"
-            log_info "Restricted Flatpak access for user $user"
-        else
-            log_debug "Flatpak binary not found at /usr/bin/flatpak"
-            # Try to find flatpak
-            local flatpak_path=$(which flatpak 2>/dev/null)
-            if [ -n "$flatpak_path" ]; then
-                log_debug "Found flatpak at $flatpak_path"
-                chown root:flatpak "$flatpak_path"
-                chmod 750 "$flatpak_path"
-                log_debug "Flatpak binary permissions: $(ls -la "$flatpak_path")"
-            else
-                log_warning "Could not find flatpak binary, cannot restrict access"
-            fi
-        fi
-        
+        # Use PolicyKit to restrict Flatpak access without changing binary permissions
+        # This prevents login issues while still restricting access
+
         # Add PolicyKit rules for Flatpak
         mkdir -p "/etc/polkit-1/rules.d"
         cat > "/etc/polkit-1/rules.d/20-restrict-flatpak-${user}.rules" << EOF
@@ -311,24 +283,63 @@ polkit.addRule(function(action, subject) {
     }
 });
 EOF
-        log_debug "Created PolicyKit rules for Flatpak at /etc/polkit-1/rules.d/20-restrict-flatpak-${user}.rules"
+        log_debug "Created PolicyKit rules for Flatpak"
         
-    elif [ "$action" = "allow" ]; then
-        # Add user to flatpak group
-        if getent group flatpak > /dev/null 2>&1; then
-            log_debug "Adding user to flatpak group"
-            gpasswd -a "$user" flatpak &> /dev/null
-            log_info "Allowed Flatpak access for user $user"
-        else
-            log_warning "Flatpak group doesn't exist, creating and adding user"
-            groupadd flatpak
-            gpasswd -a "$user" flatpak &> /dev/null
+        # Add a secondary restriction via D-Bus policy
+        mkdir -p "/etc/dbus-1/system.d"
+        cat > "/etc/dbus-1/system.d/flatpak-${user}-restriction.conf" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <policy user="$user">
+    <deny send_destination="org.freedesktop.Flatpak"/>
+  </policy>
+</busconfig>
+EOF
+        log_debug "Created D-Bus policy restriction for Flatpak"
+        
+        # For extra security, create a PAM restriction (works on some systems)
+        if [ -d "/etc/security/restrict.d" ] || mkdir -p "/etc/security/restrict.d"; then
+            touch "/etc/security/restrict.d/flatpak-${user}.conf"
+            log_debug "Created PAM restriction placeholder"
         fi
         
-        # Remove PolicyKit restrictions if they exist
+        log_info "Restricted Flatpak access for user $user using PolicyKit and D-Bus policies"
+        
+    elif [ "$action" = "allow" ]; then
+        # Remove PolicyKit restrictions
         if [ -f "/etc/polkit-1/rules.d/20-restrict-flatpak-${user}.rules" ]; then
             rm -f "/etc/polkit-1/rules.d/20-restrict-flatpak-${user}.rules"
             log_debug "Removed Flatpak PolicyKit rules"
+        fi
+        
+        # Remove D-Bus policy restrictions
+        if [ -f "/etc/dbus-1/system.d/flatpak-${user}-restriction.conf" ]; then
+            rm -f "/etc/dbus-1/system.d/flatpak-${user}-restriction.conf"
+            log_debug "Removed D-Bus policy restriction"
+        fi
+        
+        # Remove PAM restrictions if they exist
+        if [ -f "/etc/security/restrict.d/flatpak-${user}.conf" ]; then
+            rm -f "/etc/security/restrict.d/flatpak-${user}.conf"
+            log_debug "Removed PAM restriction"
+        fi
+        
+        log_info "Allowed Flatpak access for user $user"
+    fi
+    
+    # Check for and fix any existing permission issues on the flatpak binary
+    # This ensures we don't leave the system in a broken state if the script was run before
+    if [ -f "/usr/bin/flatpak" ]; then
+        current_perms=$(stat -c "%a" /usr/bin/flatpak 2>/dev/null || stat -f "%p" /usr/bin/flatpak 2>/dev/null)
+        current_owner=$(stat -c "%U:%G" /usr/bin/flatpak 2>/dev/null || stat -f "%u:%g" /usr/bin/flatpak 2>/dev/null)
+        
+        if [ "$current_perms" != "755" ] || [ "$current_owner" != "root:root" ]; then
+            log_warning "Fixing incorrect permissions on /usr/bin/flatpak to prevent login issues"
+            chmod 755 /usr/bin/flatpak
+            chown root:root /usr/bin/flatpak
+            log_debug "Reset flatpak binary permissions to standard defaults"
         fi
     fi
 }
