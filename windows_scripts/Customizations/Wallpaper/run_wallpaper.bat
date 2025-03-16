@@ -118,50 +118,31 @@ if not exist "%PS_SCRIPT%" (
     ) else (
         echo [ERROR] No local copy found. Creating a minimal script...
         
-        :: Create a minimal script that just sets the wallpaper
-        (
-            echo param^([string]$ImageUrl = "https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg", [string]$Style = "Fit"^)
+        :: Create minimal PowerShell script using a temporary file first
+        set "TEMP_PS=%TEMP%\temp_wallpaper.ps1"
+        
+        > "%TEMP_PS%" (
+            echo #Minimal wallpaper script
+            echo param^(
+            echo     [string]$ImageUrl = 'https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg',
+            echo     [string]$Style = 'Fit'
+            echo ^)
             echo.
             echo try {
-            echo     Write-Host "Attempting to download and set wallpaper from $ImageUrl"
+            echo     Write-Host 'Attempting to download and set wallpaper...'
             echo     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             echo.
-            echo     # Try multiple methods to download the image
-            echo     $wallpaperPath = "$env:TEMP\corporate-wallpaper.jpg"
+            echo     $wallpaperPath = Join-Path $env:TEMP 'corporate-wallpaper.jpg'
             echo     $downloadSuccess = $false
             echo.
-            echo     # Try method 1: Invoke-WebRequest
             echo     try {
             echo         Invoke-WebRequest -Uri $ImageUrl -OutFile $wallpaperPath -UseBasicParsing -TimeoutSec 30
             echo         if ^(Test-Path $wallpaperPath^) { $downloadSuccess = $true }
             echo     } catch {
-            echo         Write-Host "Method 1 failed: $_"
-            echo     }
-            echo.
-            echo     # Try method 2: WebClient
-            echo     if ^(-not $downloadSuccess^) {
-            echo         try {
-            echo             $webClient = New-Object System.Net.WebClient
-            echo             $webClient.DownloadFile^($ImageUrl, $wallpaperPath^)
-            echo             if ^(Test-Path $wallpaperPath^) { $downloadSuccess = $true }
-            echo         } catch {
-            echo             Write-Host "Method 2 failed: $_"
-            echo         }
-            echo     }
-            echo.
-            echo     # Try method 3: BitsTransfer
-            echo     if ^(-not $downloadSuccess^) {
-            echo         try {
-            echo             Import-Module BitsTransfer -ErrorAction SilentlyContinue
-            echo             Start-BitsTransfer -Source $ImageUrl -Destination $wallpaperPath -ErrorAction Stop
-            echo             if ^(Test-Path $wallpaperPath^) { $downloadSuccess = $true }
-            echo         } catch {
-            echo             Write-Host "Method 3 failed: $_"
-            echo         }
+            echo         Write-Host "Download failed: $_"
             echo     }
             echo.
             echo     if ^($downloadSuccess^) {
-            echo         # Set wallpaper using Windows API
             echo         Add-Type -TypeDefinition @'
             echo         using System;
             echo         using System.Runtime.InteropServices;
@@ -171,16 +152,20 @@ if not exist "%PS_SCRIPT%" (
             echo         }
             echo '@
             echo         [Wallpaper]::SystemParametersInfo^(20, 0, $wallpaperPath, 3^)
-            echo         Write-Host "Wallpaper set successfully"
+            echo         Write-Host 'Wallpaper set successfully'
             echo     } else {
-            echo         Write-Host "All download methods failed"
+            echo         Write-Host 'Failed to download wallpaper'
             echo         exit 1
             echo     }
             echo } catch {
             echo     Write-Host "Error: $_"
             echo     exit 1
             echo }
-        ) > "%PS_SCRIPT%"
+        )
+        
+        :: Copy the temporary file to the final destination
+        copy /Y "%TEMP_PS%" "%PS_SCRIPT%" >nul
+        del "%TEMP_PS%" 2>nul
         
         if not exist "%PS_SCRIPT%" (
             echo [ERROR] Could not create script. Exiting.
