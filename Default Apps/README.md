@@ -1,0 +1,1 @@
+PowerShell script that resets default apps to system defaults with user confirmation

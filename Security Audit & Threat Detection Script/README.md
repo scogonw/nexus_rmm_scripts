@@ -1,0 +1,1 @@
+Directly run security check script to perform full system scan  
