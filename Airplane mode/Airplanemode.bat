@@ -1,18 +1,17 @@
 @echo off
-title Airplanemode
+title Airplane Mode Toggle
 
-# Ensure script runs with administrative privileges
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Host "Restarting script with Administrator privileges..." -ForegroundColor Yellow
-    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
-    exit
-}
-
-
+:: Check for admin privileges
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Administrator privileges required. Elevating...
+    powershell -Command "Start-Process '%~dpnx0' -Verb RunAs"
+    exit /b
+)
 
 :: Run the PowerShell script
-echo Running security scan script...
+echo Running Airplane Mode Toggle script...
 powershell -ExecutionPolicy Bypass -File "%~dp0Airplanemode.ps1"
 
 :: Pause to see the results
-pause Additional_Security_Investigation
+pause
