@@ -29,30 +29,58 @@ function Reset-AllAdaptersToDhcp {
     
     foreach ($adapter in $adapters) {
         Write-Status "  Resetting DNS to DHCP for adapter: $($adapter.Name)"
+        
+        # Reset IPv4 DNS first
         try {
-            # Reset IPv4 DNS
             Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ResetServerAddresses -ErrorAction Stop
             Write-Success "  Reset IPv4 DNS to DHCP for adapter: $($adapter.Name)"
             Write-VerboseLog "Reset IPv4 DNS to DHCP for adapter $($adapter.Name)"
-            
-            # Reset IPv6 DNS
-            Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ResetServerAddresses -AddressFamily IPv6 -ErrorAction Stop
-            Write-Success "  Reset IPv6 DNS to DHCP for adapter: $($adapter.Name)"
-            Write-VerboseLog "Reset IPv6 DNS to DHCP for adapter $($adapter.Name)"
         } catch {
-            Write-Error ("  Failed to reset DNS for adapter $($adapter.Name): " + $_)
-            Write-VerboseLog ("DNS reset error: " + $_)
+            Write-Error ("  Failed to reset IPv4 DNS for adapter $($adapter.Name): " + $_)
+            Write-VerboseLog ("IPv4 DNS reset error: " + $_)
             
-            # Try netsh as fallback
+            # Try netsh as fallback for IPv4
             try {
-                Write-Status "  Trying netsh to reset DNS for adapter: $($adapter.Name)"
+                Write-Status "  Trying netsh to reset IPv4 DNS for adapter: $($adapter.Name)"
                 $netshOutput = netsh interface ip set dns name="$($adapter.Name)" source=dhcp
-                $netshOutput6 = netsh interface ipv6 set dnsservers name="$($adapter.Name)" source=dhcp
-                Write-CommandOutput "netsh DNS reset" "$netshOutput`n$netshOutput6"
-                Write-Success "  Reset DNS using netsh for adapter: $($adapter.Name)"
+                Write-CommandOutput "netsh IPv4 DNS reset" $netshOutput
+                Write-Success "  Reset IPv4 DNS using netsh for adapter: $($adapter.Name)"
             } catch {
-                Write-Error ("  Failed to reset DNS using netsh for adapter $($adapter.Name): " + $_)
-                Write-VerboseLog ("netsh reset error: " + $_)
+                Write-Error ("  Failed to reset IPv4 DNS using netsh for adapter $($adapter.Name): " + $_)
+                Write-VerboseLog ("netsh IPv4 reset error: " + $_)
+            }
+        }
+        
+        # Reset IPv6 DNS separately
+        try {
+            # First try with AddressFamily parameter
+            try {
+                Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ResetServerAddresses -AddressFamily IPv6 -ErrorAction Stop
+                Write-Success "  Reset IPv6 DNS to DHCP for adapter: $($adapter.Name)"
+                Write-VerboseLog "Reset IPv6 DNS to DHCP for adapter $($adapter.Name)"
+            } catch [System.Management.Automation.ParameterBindingException] {
+                # If AddressFamily parameter is not supported, use netsh directly
+                Write-VerboseLog "AddressFamily parameter not supported, using netsh directly"
+                throw
+            }
+        } catch {
+            # Don't display error for AddressFamily not found, just use netsh
+            if ($_.ToString() -match "AddressFamily") {
+                Write-VerboseLog "Falling back to netsh for IPv6 DNS reset due to: $($_)"
+            } else {
+                Write-Error ("  Failed to reset IPv6 DNS for adapter $($adapter.Name): " + $_)
+                Write-VerboseLog ("IPv6 DNS reset error: " + $_)
+            }
+            
+            # Try netsh as fallback for IPv6
+            try {
+                Write-Status "  Using netsh to reset IPv6 DNS for adapter: $($adapter.Name)"
+                $netshOutput6 = netsh interface ipv6 set dnsservers name="$($adapter.Name)" source=dhcp
+                Write-CommandOutput "netsh IPv6 DNS reset" $netshOutput6
+                Write-Success "  Reset IPv6 DNS using netsh for adapter: $($adapter.Name)"
+            } catch {
+                Write-Error ("  Failed to reset IPv6 DNS using netsh for adapter $($adapter.Name): " + $_)
+                Write-VerboseLog ("netsh IPv6 reset error: " + $_)
             }
         }
     }
@@ -213,26 +241,52 @@ try {
                     # Restore IPv6 DNS
                     try {
                         if ($ipv6Dns -and $ipv6Dns.Count -gt 0 -and -not ($ipv6Dns -contains "::1")) {
-                            Set-DnsClientServerAddress -InterfaceIndex $ifIndex -ServerAddresses $ipv6Dns -AddressFamily IPv6 -ErrorAction Stop
-                            Write-Success "  Restored IPv6 DNS for adapter: $adapterName"
-                            Write-VerboseLog "Restored IPv6 DNS for adapter $adapterName to: $($ipv6Dns -join ', ')"
+                            try {
+                                Set-DnsClientServerAddress -InterfaceIndex $ifIndex -ServerAddresses $ipv6Dns -AddressFamily IPv6 -ErrorAction Stop
+                                Write-Success "  Restored IPv6 DNS for adapter: $adapterName"
+                                Write-VerboseLog "Restored IPv6 DNS for adapter $adapterName to: $($ipv6Dns -join ', ')"
+                            } catch [System.Management.Automation.ParameterBindingException] {
+                                # If AddressFamily parameter is not supported, use netsh directly
+                                Write-VerboseLog "AddressFamily parameter not supported, using netsh directly"
+                                throw
+                            }
                         } else {
                             # If original DNS was localhost or empty, set to DHCP
-                            Set-DnsClientServerAddress -InterfaceIndex $ifIndex -ResetServerAddresses -AddressFamily IPv6 -ErrorAction Stop
-                            Write-Success "  Reset IPv6 DNS to DHCP for adapter: $adapterName"
-                            Write-VerboseLog "Reset IPv6 DNS to DHCP for adapter $adapterName"
+                            try {
+                                Set-DnsClientServerAddress -InterfaceIndex $ifIndex -ResetServerAddresses -AddressFamily IPv6 -ErrorAction Stop
+                                Write-Success "  Reset IPv6 DNS to DHCP for adapter: $adapterName"
+                                Write-VerboseLog "Reset IPv6 DNS to DHCP for adapter $adapterName"
+                            } catch [System.Management.Automation.ParameterBindingException] {
+                                # If AddressFamily parameter is not supported, use netsh directly
+                                Write-VerboseLog "AddressFamily parameter not supported, using netsh directly"
+                                throw
+                            }
                         }
                     } catch {
-                        Write-Error ("  Failed to restore IPv6 DNS for adapter ${adapterName}: " + $_)
-                        Write-VerboseLog ("IPv6 DNS restore error: " + $_)
+                        # Don't show error for AddressFamily parameter, just use netsh
+                        if ($_.ToString() -match "AddressFamily") {
+                            Write-VerboseLog "Falling back to netsh for IPv6 DNS due to: $($_)"
+                        } else {
+                            Write-Error ("  Failed to restore IPv6 DNS for adapter ${adapterName}: " + $_)
+                            Write-VerboseLog ("IPv6 DNS restore error: " + $_)
+                        }
                         
                         # Try netsh as fallback for IPv6
                         try {
-                            $netshOutput = netsh interface ipv6 set dnsservers name="$adapterName" source=dhcp
-                            Write-CommandOutput "netsh ipv6 DNS reset" $netshOutput
-                            Write-Status "  Reset IPv6 DNS using netsh for adapter: $adapterName"
+                            Write-Status "  Using netsh to configure IPv6 DNS for adapter: $adapterName"
+                            if ($ipv6Dns -and $ipv6Dns.Count -gt 0 -and -not ($ipv6Dns -contains "::1")) {
+                                # Set specific IPv6 DNS servers
+                                $dnsServers = $ipv6Dns -join ","
+                                $netshOutput = netsh interface ipv6 set dnsservers name="$adapterName" static $dnsServers primary
+                            } else {
+                                # Reset to DHCP
+                                $netshOutput = netsh interface ipv6 set dnsservers name="$adapterName" source=dhcp
+                            }
+                            Write-CommandOutput "netsh IPv6 DNS config" $netshOutput
+                            Write-Success "  Configured IPv6 DNS using netsh for adapter: $adapterName"
                         } catch {
-                            Write-Error ("  Failed to reset IPv6 DNS using netsh for adapter ${adapterName}: " + $_)
+                            Write-Error ("  Failed to configure IPv6 DNS using netsh for adapter ${adapterName}: " + $_)
+                            Write-VerboseLog ("netsh IPv6 DNS config error: " + $_)
                         }
                     }
                 } else {
@@ -291,15 +345,48 @@ try {
             
             if ($startupType -eq "Disabled") {
                 Write-Status "DNS Client service is disabled. Re-enabling..."
-                Set-Service "Dnscache" -StartupType Automatic
-                Start-Service "Dnscache"
-                Write-Success "DNS Client service re-enabled and started"
-                Write-VerboseLog "DNS Client service startup type set to Automatic and service started"
+                try {
+                    Set-Service "Dnscache" -StartupType Automatic -ErrorAction Stop
+                    Start-Service "Dnscache" -ErrorAction Stop
+                    Write-Success "DNS Client service re-enabled and started"
+                    Write-VerboseLog "DNS Client service startup type set to Automatic and service started"
+                } catch {
+                    Write-Error ("Failed to re-enable DNS Client service: " + $_)
+                    Write-VerboseLog ("DNS Client service error: " + $_)
+                    
+                    # Try alternative method using registry
+                    Write-Status "Trying alternative method to enable DNS Client service..."
+                    try {
+                        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Dnscache"
+                        if (Test-Path $regPath) {
+                            Set-ItemProperty -Path $regPath -Name "Start" -Value 2 -Type DWord -Force
+                            Write-Status "Registry setting updated, trying to start service..."
+                            # Try to start the service using SC command
+                            $scStartOutput = sc.exe start Dnscache
+                            Write-CommandOutput "sc.exe start Dnscache" $scStartOutput
+                            Write-Success "Used alternative method to enable DNS Client service"
+                        }
+                    } catch {
+                        Write-Error ("Alternative method also failed: " + $_)
+                        Write-VerboseLog ("Alternative method error: " + $_)
+                        Write-Status "You may need to manually enable the DNS Client service after restart"
+                    }
+                }
             } else {
                 if ($dnsClientService.Status -ne "Running") {
                     Write-Status "DNS Client service is not running. Starting..."
-                    Start-Service "Dnscache"
-                    Write-Success "DNS Client service started"
+                    try {
+                        Start-Service "Dnscache" -ErrorAction Stop
+                        Write-Success "DNS Client service started"
+                    } catch {
+                        Write-Error ("Failed to start DNS Client service: " + $_)
+                        Write-VerboseLog ("DNS Client service start error: " + $_)
+                        
+                        # Try SC command as fallback
+                        Write-Status "Trying SC command to start DNS Client service..."
+                        $scStartOutput = sc.exe start Dnscache
+                        Write-CommandOutput "sc.exe start Dnscache" $scStartOutput
+                    }
                 } else {
                     Write-Status "DNS Client service is already running"
                 }
@@ -311,9 +398,26 @@ try {
                 $startValue = Get-ItemProperty -Path $regPath -Name "Start" -ErrorAction SilentlyContinue
                 if ($startValue -and $startValue.Start -eq 4) {
                     Write-Status "DNS Client service disabled in registry. Re-enabling..."
-                    Set-ItemProperty -Path $regPath -Name "Start" -Value 2 -Type DWord -Force
-                    Write-Success "Registry setting for DNS Client service updated"
-                    Write-VerboseLog "Registry value updated: $regPath\Start = 2"
+                    try {
+                        Set-ItemProperty -Path $regPath -Name "Start" -Value 2 -Type DWord -Force -ErrorAction Stop
+                        Write-Success "Registry setting for DNS Client service updated"
+                        Write-VerboseLog "Registry value updated: $regPath\Start = 2"
+                    } catch {
+                        Write-Error ("Failed to update registry for DNS Client service: " + $_)
+                        Write-VerboseLog ("Registry update error: " + $_)
+                        
+                        # Try using REG.EXE as an alternative
+                        Write-Status "Trying alternative method to update registry..."
+                        try {
+                            $regExeOutput = reg.exe add "HKLM\SYSTEM\CurrentControlSet\Services\Dnscache" /v Start /t REG_DWORD /d 2 /f
+                            Write-CommandOutput "reg.exe add command" $regExeOutput
+                            Write-Success "Registry updated using reg.exe"
+                        } catch {
+                            Write-Error ("Alternative registry update failed: " + $_)
+                            Write-VerboseLog ("Reg.exe error: " + $_)
+                            Write-Status "You may need to manually configure the DNS Client service after restart"
+                        }
+                    }
                 }
             }
         } else {
