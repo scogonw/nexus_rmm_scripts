@@ -34,31 +34,31 @@ This set of scripts allows you to automatically deploy and enforce a corporate w
 run_wallpaper.bat
 ```
 
-This will use the default wallpaper URL and the default style ("Fit").
+This will use the default wallpaper URL.
 
 ### Custom Wallpaper
 
-To use a custom wallpaper with the default style, provide the URL as the first argument:
+To use a custom wallpaper, provide the URL as an argument:
 
 ```
-run_wallpaper.bat "https://example.com/path/to/wallpaper.jpg"
+run_wallpaper.bat https://example.com/path/to/wallpaper.jpg
 ```
 
 ### Custom Wallpaper with Style
 
-To specify both a custom wallpaper URL and a style, provide the URL as the first argument and the style as the second:
+To specify both a custom wallpaper and style:
 
 ```
-run_wallpaper.bat "https://example.com/path/to/wallpaper.jpg" "Fit"
+run_wallpaper.bat https://example.com/path/to/wallpaper.jpg Fit
 ```
 
 Available styles are:
 - Fill - Resizes the image to fill the screen while maintaining aspect ratio (may crop)
-- Fit - Resizes the image to fit the screen while maintaining aspect ratio (may have black bars) (Default)
+- Fit - Resizes the image to fit the screen while maintaining aspect ratio (may have black bars)
 - Stretch - Stretches the image to fill the screen (may distort)
 - Tile - Tiles the image across the screen
 - Center - Centers the image on screen without resizing
-- Span - Spans the image across multiple monitors
+- Span - Spans the image across multiple monitors (default)
 
 ### Tactical RMM Integration
 
@@ -66,7 +66,7 @@ Available styles are:
 2. Create a new script in Tactical RMM that runs `run_wallpaper.bat`
 3. Schedule the script to run on all workstations or add it to your onboarding process
 
-For Tactical RMM deployment, you can use the following command (example uses custom URL and "Span" style):
+For Tactical RMM deployment, you can use the following command:
 
 ```
 cmd.exe /c "%ProgramData%\Tactical RMM\temp\run_wallpaper.bat" "https://your-image-url.jpg" "Span"
@@ -162,16 +162,16 @@ $excludedUsers = @(
 
 ### Changing Default Wallpaper URL
 
-To change the default wallpaper URL, modify this line in the relevant scripts:
+To change the default wallpaper URL, modify this line in both scripts:
 
 ```powershell
 # In set_wallpaper.ps1
-param([string]$ImageUrl = "https://your-default-url.jpg", [string]$Style = "Fit")
+param([string]$ImageUrl = "https://your-default-url.jpg", [string]$Style = "Span")
 ```
 
 ```batch
 :: In run_wallpaper.bat
-set "DEFAULT_IMAGE_URL=https://your-default-url.jpg"
+set "IMAGE_URL=https://your-default-url.jpg"
 ```
 
 ### Customizing Registry Enforcement

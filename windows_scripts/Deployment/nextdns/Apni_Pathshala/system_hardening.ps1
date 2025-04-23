@@ -136,7 +136,7 @@ try {
     Write-LogInfo "Completed processing user 'scogo'."
     
     Write-LogInfo "Processing user 'apadmin'..."
-    Create-LocalUser -UserName "apadmin" -FullName "Apni Pathshala Admin" -Password "@pathshala@1947" -GroupName "Administrators" -UserMayNotChangePassword:$true
+    Create-LocalUser -UserName "apadmin" -FullName "Apni Pathshala Admin" -Password "@pathshal@1947" -GroupName "Administrators"
     Write-LogInfo "Completed processing user 'apadmin'."
     
     Write-LogInfo "Processing user 'student'..."
