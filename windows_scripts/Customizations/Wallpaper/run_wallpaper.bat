@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-echo Scogo Nexus RMM Wallpaper Deployment Tool v1.1.2
+echo Scogo Nexus RMM Wallpaper Deployment Tool v1.1.3
 echo ----------------------------------------------
 
 :: Set default values

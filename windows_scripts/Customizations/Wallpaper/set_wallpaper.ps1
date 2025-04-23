@@ -14,7 +14,7 @@
 .NOTES
 	Author: Karan Singh | License: MIT
 	Modified for Scogo Nexus RMM
-	Version: 1.1.2
+	Version: 1.1.3
 #>
 
 param([string]$ImageUrl = "https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg", [string]$Style = "Fit")
@@ -508,6 +508,102 @@ function Get-WindowsVersionSpecificSettings {
     return $settings
 }
 
+# Function to ensure wallpaper is set for new user accounts
+function Set-WallpaperForNewUsers {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$ImagePath,
+        
+        [string]$Style = "Fit"
+    )
+    
+    Write-Host "Configuring wallpaper for Default user profile (new user accounts)..."
+    
+    # Map style names to values
+    $WallpaperStyle = switch($Style) {
+        "Fill"    {"10"}
+        "Fit"     {"6"}
+        "Stretch" {"2"}
+        "Tile"    {"0"}
+        "Center"  {"0"}
+        "Span"    {"22"}
+    }
+    
+    $TileValue = if ($Style -eq "Tile") {"1"} else {"0"}
+    
+    try {
+        # Load the default user hive
+        $defaultUserPath = "C:\Users\Default\NTUSER.DAT"
+        if (Test-Path $defaultUserPath) {
+            # Unload first in case it's already loaded
+            & reg unload "HKU\DefaultUser" | Out-Null -ErrorAction SilentlyContinue
+            [gc]::Collect()
+            Start-Sleep -Seconds 1
+            
+            # Load the hive
+            Write-Host "Loading Default user registry hive..."
+            & reg load "HKU\DefaultUser" $defaultUserPath | Out-Null
+            
+            if ($LASTEXITCODE -eq 0) {
+                # Create Desktop directory for Default user if it doesn't exist
+                $defaultUserDesktop = "C:\Users\Default\AppData\Roaming\Microsoft\Windows\Themes"
+                if (-not (Test-Path $defaultUserDesktop)) {
+                    New-Item -Path $defaultUserDesktop -ItemType Directory -Force | Out-Null
+                }
+                
+                # Copy the wallpaper to a location in the Default user profile
+                $defaultUserWallpaper = "C:\Users\Default\AppData\Roaming\Microsoft\Windows\Themes\corporate-wallpaper.jpg"
+                Copy-Item -Path $ImagePath -Destination $defaultUserWallpaper -Force
+                
+                # Set appropriate permissions
+                $acl = Get-Acl $defaultUserWallpaper
+                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("Users", "ReadAndExecute", "Allow")
+                $acl.SetAccessRule($rule)
+                Set-Acl $defaultUserWallpaper $acl
+                
+                # Update registry settings for Default user
+                Write-Host "Setting wallpaper registry entries for Default user..."
+                & reg add "HKU\DefaultUser\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d $WallpaperStyle /f | Out-Null
+                & reg add "HKU\DefaultUser\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d $TileValue /f | Out-Null
+                & reg add "HKU\DefaultUser\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d $defaultUserWallpaper /f | Out-Null
+                
+                # Create and configure required registry keys to prevent wallpaper changes
+                & reg add "HKU\DefaultUser\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop" /v NoChangingWallPaper /t REG_DWORD /d 1 /f | Out-Null
+                & reg add "HKU\DefaultUser\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v NoDispBackgroundPage /t REG_DWORD /d 1 /f | Out-Null
+                
+                Write-Host "[SUCCESS] Default user profile configured successfully for new accounts"
+                return $true
+            } else {
+                Write-Warning "Could not load Default user registry hive"
+            }
+        } else {
+            Write-Warning "Default user profile not found at $defaultUserPath"
+        }
+        
+        return $false
+    } catch {
+        Write-Error "Error configuring Default user profile: $_"
+        return $false
+    } finally {
+        # Unload the hive
+        [gc]::Collect()
+        Start-Sleep -Seconds 1
+        try {
+            & reg unload "HKU\DefaultUser" | Out-Null
+        } catch {
+            Write-Warning "Failed to unload Default user registry hive"
+            # Try once more
+            Start-Sleep -Seconds 2
+            [gc]::Collect()
+            try {
+                & reg unload "HKU\DefaultUser" | Out-Null
+            } catch {
+                Write-Error "Could not unload Default user registry hive. You may need to restart the computer."
+            }
+        }
+    }
+}
+
 # Main execution starts here
 try {
     # Set error action preference to stop on all errors to improve logging
@@ -516,7 +612,7 @@ try {
     
     # Log script start with version
     Write-Host "====================================================" -ForegroundColor Cyan
-    Write-Host "Scogo Nexus RMM Wallpaper Deployment Tool v1.1.2" -ForegroundColor Cyan  
+    Write-Host "Scogo Nexus RMM Wallpaper Deployment Tool v1.1.3" -ForegroundColor Cyan  
     Write-Host "Started: $(Get-Date)" -ForegroundColor Cyan
     Write-Host "====================================================" -ForegroundColor Cyan
     
@@ -637,6 +733,14 @@ try {
         }
     } catch {
         Write-Warning "Error setting wallpaper for current user: $_"
+    }
+    
+    # Set wallpaper for Default user profile (future users)
+    $defaultUserSuccess = $false
+    try {
+        $defaultUserSuccess = Set-WallpaperForNewUsers -ImagePath $wallpaperPath -Style $Style
+    } catch {
+        Write-Warning "Error setting wallpaper for future users: $_"
     }
     
     # Block users from changing the wallpaper
@@ -766,6 +870,7 @@ powershell.exe -ExecutionPolicy Bypass -File "$refreshScriptPath"
     Write-Host "Wallpaper deployment summary:" -ForegroundColor Green
     Write-Host "- Wallpaper downloaded: $downloadSuccess" -ForegroundColor Green
     Write-Host "- Current user applied: $currentUserSuccess" -ForegroundColor Green
+    Write-Host "- Default user profile (future users): $defaultUserSuccess" -ForegroundColor Green
     Write-Host "- User profiles updated: $userSuccessCount out of $($userProfiles.Count)" -ForegroundColor Green
     Write-Host "- Wallpaper changes blocked: $blockSuccess" -ForegroundColor Green
     Write-Host "- Script completed: $(Get-Date)" -ForegroundColor Green
