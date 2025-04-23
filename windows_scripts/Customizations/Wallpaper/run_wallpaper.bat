@@ -4,215 +4,124 @@ setlocal EnableDelayedExpansion
 echo Scogo Nexus RMM Wallpaper Deployment Tool v1.1.2
 echo ----------------------------------------------
 
-:: Check for Administrator privileges
-NET SESSION >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] This script requires administrator privileges.
-    echo [INFO] Requesting elevation...
-    
-    :: Get the full path of the script
-    set "SCRIPT=%~f0"
-    
-    :: Self-elevate with the same parameters
-    powershell -Command "Start-Process cmd.exe -ArgumentList '/c \"%SCRIPT%\" %*' -Verb RunAs"
-    exit /b
-)
-
 :: Set default values
-set "IMAGE_URL=https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg"
-set "STYLE=Fit"
+set "DEFAULT_URL=https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg"
+set "WALLPAPER_URL=%DEFAULT_URL%"
+set "WALLPAPER_STYLE=Fit"
 
-:: Process parameters
+:: Process URL parameter if provided
 if not "%~1"=="" (
-    :: Check if URL seems valid
-    echo %~1 | findstr /i "^http:/\|^https:/\|^ftp:/\|^ftps:/" >nul
-    if %ERRORLEVEL% EQU 0 (
-        set "IMAGE_URL=%~1"
-        echo [INFO] Using provided URL: !IMAGE_URL!
-    ) else (
-        echo [WARNING] Invalid URL format: %~1
-        echo [INFO] URLs must start with http://, https://, ftp:// or ftps://
-        echo [INFO] Using default URL instead: !IMAGE_URL!
+    set "USER_URL=%~1"
+    
+    :: Remove @ if present at the start
+    if "!USER_URL:~0,1!"=="@" (
+        set "USER_URL=!USER_URL:~1!"
     )
+    
+    echo [INFO] User provided URL: !USER_URL!
+    set "WALLPAPER_URL=!USER_URL!"
 ) else (
-    echo [INFO] No URL provided, using default: !IMAGE_URL!
+    echo [INFO] No URL parameter provided, using default URL
 )
 
-:: Check for style parameter
+:: Process style parameter if provided
 if not "%~2"=="" (
-    :: Validate style parameter
-    set "VALID_STYLE=0"
-    for %%s in (Fill Fit Stretch Tile Center Span) do (
-        if /i "%%s"=="%~2" (
-            set "STYLE=%~2"
-            set "VALID_STYLE=1"
-        )
-    )
-    
-    if "!VALID_STYLE!"=="1" (
-        echo [INFO] Using wallpaper style: !STYLE!
-    ) else (
-        echo [WARNING] Invalid style: %~2. Using default style: !STYLE!
-    )
-)
-
-echo [INFO] Downloading and setting corporate wallpaper...
-echo [INFO] This may take a moment...
-
-:: Define local paths with fallbacks
-set "PS_DIR=%ProgramData%\Scogo\Wallpaper"
-set "PS_SCRIPT=%PS_DIR%\set_wallpaper.ps1"
-set "PS_URL=https://raw.githubusercontent.com/scogonw/nexus_rmm_scripts/refs/heads/main/windows_scripts/Customizations/Wallpaper/set_wallpaper.ps1"
-set "PS_LOCAL_FALLBACK=%~dp0set_wallpaper.ps1"
-set "LOCAL_IMAGE=%PS_DIR%\corporate-wallpaper.jpg"
-
-:: Create directory if it doesn't exist
-if not exist "%PS_DIR%" (
-    echo [INFO] Creating directory: %PS_DIR%
-    mkdir "%PS_DIR%" 2>nul
-    if !ERRORLEVEL! NEQ 0 (
-        echo [ERROR] Failed to create directory: %PS_DIR%
-        echo [INFO] Will use temporary directory instead.
-        set "PS_DIR=%TEMP%\Scogo\Wallpaper"
-        set "PS_SCRIPT=%PS_DIR%\set_wallpaper.ps1"
-        set "LOCAL_IMAGE=%PS_DIR%\corporate-wallpaper.jpg"
-        mkdir "%PS_DIR%" 2>nul
-    )
-)
-
-:: Try to use local script if it exists (first priority)
-if exist "%PS_LOCAL_FALLBACK%" (
-    echo [INFO] Found local script, copying to: %PS_SCRIPT%
-    copy /Y "%PS_LOCAL_FALLBACK%" "%PS_SCRIPT%" >nul
-    if !ERRORLEVEL! NEQ 0 (
-        echo [ERROR] Failed to copy local script.
-    ) else (
-        echo [INFO] Local script copied successfully.
-        goto :run_script
-    )
-)
-
-:: Check if we already have a copy of the script in the destination
-if exist "%PS_SCRIPT%" (
-    echo [INFO] Found existing script at %PS_SCRIPT%
-    echo [INFO] Will use existing script.
-    goto :run_script
-)
-
-:: Download the PowerShell script (last resort)
-echo [INFO] Downloading PowerShell script from %PS_URL%...
-powershell -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PS_URL%' -OutFile '%PS_SCRIPT%' -UseBasicParsing -TimeoutSec 30; if($?) { Write-Host '[INFO] Download successful.' } } catch { Write-Host '[ERROR] Download failed: ' + $_.Exception.Message; exit 1 } }"
-
-if not exist "%PS_SCRIPT%" (
-    echo [ERROR] Failed to download PowerShell script.
-    
-    :: Try to copy from script directory as fallback
-    echo [INFO] Checking for local copy in script directory...
-    if exist "%~dp0set_wallpaper.ps1" (
-        echo [INFO] Found local copy, using it instead.
-        copy /Y "%~dp0set_wallpaper.ps1" "%PS_SCRIPT%" >nul
-        if !ERRORLEVEL! NEQ 0 (
-            echo [ERROR] Failed to copy script. Exiting.
-            exit /b 1
-        )
-    ) else (
-        echo [ERROR] No local copy found. Creating a minimal script...
-        
-        :: Create minimal PowerShell script using a temporary file first
-        set "TEMP_PS=%TEMP%\temp_wallpaper.ps1"
-        
-        > "%TEMP_PS%" (
-            echo #Minimal wallpaper script
-            echo param^(
-            echo     [string]$ImageUrl = 'https://triton-media.s3.ap-south-1.amazonaws.com/media/logos/wallpaper-scogo.jpg',
-            echo     [string]$Style = 'Fit'
-            echo ^)
-            echo.
-            echo try {
-            echo     Write-Host 'Attempting to download and set wallpaper...'
-            echo     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            echo.
-            echo     $wallpaperPath = Join-Path $env:TEMP 'corporate-wallpaper.jpg'
-            echo     $downloadSuccess = $false
-            echo.
-            echo     try {
-            echo         Invoke-WebRequest -Uri $ImageUrl -OutFile $wallpaperPath -UseBasicParsing -TimeoutSec 30
-            echo         if ^(Test-Path $wallpaperPath^) { $downloadSuccess = $true }
-            echo     } catch {
-            echo         Write-Host "Download failed: $_"
-            echo     }
-            echo.
-            echo     if ^($downloadSuccess^) {
-            echo         Add-Type -TypeDefinition @'
-            echo         using System;
-            echo         using System.Runtime.InteropServices;
-            echo         public class Wallpaper {
-            echo             [DllImport^("user32.dll", CharSet = CharSet.Auto^)]
-            echo             public static extern int SystemParametersInfo^(int uAction, int uParam, string lpvParam, int fuWinIni^);
-            echo         }
-            echo '@
-            echo         [Wallpaper]::SystemParametersInfo^(20, 0, $wallpaperPath, 3^)
-            echo         Write-Host 'Wallpaper set successfully'
-            echo     } else {
-            echo         Write-Host 'Failed to download wallpaper'
-            echo         exit 1
-            echo     }
-            echo } catch {
-            echo     Write-Host "Error: $_"
-            echo     exit 1
-            echo }
-        )
-        
-        :: Copy the temporary file to the final destination
-        copy /Y "%TEMP_PS%" "%PS_SCRIPT%" >nul
-        del "%TEMP_PS%" 2>nul
-        
-        if not exist "%PS_SCRIPT%" (
-            echo [ERROR] Could not create script. Exiting.
-            exit /b 1
-        ) else (
-            echo [INFO] Created minimal script.
-        )
-    )
-)
-
-echo [INFO] PowerShell script ready at: %PS_SCRIPT%
-
-:run_script
-:: Run the PowerShell script with parameters
-echo [INFO] Executing wallpaper script...
-powershell -ExecutionPolicy Bypass -File "%PS_SCRIPT%" -ImageUrl "%IMAGE_URL%" -Style "%STYLE%" -ErrorAction "Stop"
-set PS_EXIT_CODE=%ERRORLEVEL%
-
-if %PS_EXIT_CODE% EQU 0 (
-    echo [SUCCESS] Wallpaper deployment completed successfully.
+    set "WALLPAPER_STYLE=%~2"
+    echo [INFO] Using custom style: !WALLPAPER_STYLE!
 ) else (
-    echo [ERROR] Wallpaper deployment failed with exit code: %PS_EXIT_CODE%
-    
-    :: Direct download as fallback option
-    echo [INFO] Attempting direct download of wallpaper image...
-    if not exist "%LOCAL_IMAGE%" (
-        powershell -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%IMAGE_URL%' -OutFile '%LOCAL_IMAGE%' -UseBasicParsing -TimeoutSec 30; } catch { exit 1 } }"
-        
-        if not exist "%LOCAL_IMAGE%" (
-            echo [ERROR] Direct download failed.
-        ) else (
-            echo [INFO] Direct download successful.
-        )
-    )
-    
-    :: Try a direct method as a last resort
-    echo [INFO] Attempting fallback method...
-    powershell -ExecutionPolicy Bypass -Command "& { try { if(-not (Test-Path '%LOCAL_IMAGE%')) { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $client = New-Object System.Net.WebClient; $client.DownloadFile('%IMAGE_URL%', '%LOCAL_IMAGE%'); }; if(Test-Path '%LOCAL_IMAGE%') { Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class Wallpaper{[DllImport(\"user32.dll\")]public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);}'; [Wallpaper]::SystemParametersInfo(20, 0, '%LOCAL_IMAGE%', 3); Write-Host '[SUCCESS] Fallback method successful.'; } else { Write-Host '[ERROR] No wallpaper image available.'; exit 1; } } catch { Write-Host '[ERROR] Fallback method failed: ' + $_.Exception.Message; exit 1 } }"
-    set PS_FALLBACK_CODE=%ERRORLEVEL%
-    
-    if %PS_FALLBACK_CODE% EQU 0 (
-        echo [SUCCESS] Wallpaper set using fallback method.
-        exit /b 0
-    ) else (
-        echo [ERROR] All methods failed. Unable to set wallpaper.
-        exit /b %PS_EXIT_CODE%
-    )
+    echo [INFO] Using default style: !WALLPAPER_STYLE!
 )
 
-exit /b %PS_EXIT_CODE%
+echo [INFO] Wallpaper URL: !WALLPAPER_URL!
+echo [INFO] Wallpaper Style: !WALLPAPER_STYLE!
+
+:: Create directories
+set "WALLPAPER_DIR=%TEMP%\Scogo\Wallpaper"
+mkdir "%WALLPAPER_DIR%" 2>nul
+set "WALLPAPER_FILE=%WALLPAPER_DIR%\corporate-wallpaper.jpg"
+
+:: Download wallpaper
+echo [INFO] Downloading wallpaper...
+
+:: Create a simple PowerShell script for downloading the wallpaper
+set "DOWNLOAD_PS=%TEMP%\download_wallpaper.ps1"
+echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 > "%DOWNLOAD_PS%"
+echo try { >> "%DOWNLOAD_PS%"
+echo     Invoke-WebRequest -Uri '%WALLPAPER_URL%' -OutFile '%WALLPAPER_FILE%' -UseBasicParsing >> "%DOWNLOAD_PS%"
+echo     Write-Host '[SUCCESS] Wallpaper downloaded successfully' >> "%DOWNLOAD_PS%"
+echo     exit 0 >> "%DOWNLOAD_PS%"
+echo } catch { >> "%DOWNLOAD_PS%"
+echo     Write-Host '[ERROR] Failed to download wallpaper: ' $_.Exception.Message >> "%DOWNLOAD_PS%"
+echo     exit 1 >> "%DOWNLOAD_PS%"
+echo } >> "%DOWNLOAD_PS%"
+
+:: Execute the download script
+powershell -ExecutionPolicy Bypass -File "%DOWNLOAD_PS%"
+
+if not %ERRORLEVEL% == 0 (
+    echo [ERROR] Failed to download wallpaper
+    del "%DOWNLOAD_PS%" 2>nul
+    exit /b 1
+)
+
+:: Create a simpler PowerShell script for setting the wallpaper
+set "WALLPAPER_PS=%TEMP%\set_wallpaper.ps1"
+echo # Wallpaper setting script > "%WALLPAPER_PS%"
+echo Add-Type -TypeDefinition @' >> "%WALLPAPER_PS%"
+echo using System; >> "%WALLPAPER_PS%"
+echo using System.Runtime.InteropServices; >> "%WALLPAPER_PS%"
+echo public class Wallpaper { >> "%WALLPAPER_PS%"
+echo     [DllImport("user32.dll", CharSet = CharSet.Auto)] >> "%WALLPAPER_PS%"
+echo     public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni); >> "%WALLPAPER_PS%"
+echo } >> "%WALLPAPER_PS%"
+echo '@ >> "%WALLPAPER_PS%"
+echo. >> "%WALLPAPER_PS%"
+echo $style = '%WALLPAPER_STYLE%' >> "%WALLPAPER_PS%"
+echo $styleValue = switch ($style) { >> "%WALLPAPER_PS%"
+echo     'Fill'    {10} >> "%WALLPAPER_PS%"
+echo     'Fit'     {6} >> "%WALLPAPER_PS%"
+echo     'Stretch' {2} >> "%WALLPAPER_PS%"
+echo     'Tile'    {0} >> "%WALLPAPER_PS%"
+echo     'Center'  {0} >> "%WALLPAPER_PS%"
+echo     'Span'    {22} >> "%WALLPAPER_PS%"
+echo     default   {6} >> "%WALLPAPER_PS%"
+echo } >> "%WALLPAPER_PS%"
+echo. >> "%WALLPAPER_PS%"
+echo try { >> "%WALLPAPER_PS%"
+echo     # Set registry values >> "%WALLPAPER_PS%"
+echo     $null = New-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name WallpaperStyle -PropertyType String -Value $styleValue -Force >> "%WALLPAPER_PS%"
+echo     $null = New-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name TileWallpaper -PropertyType String -Value 0 -Force >> "%WALLPAPER_PS%"
+echo     # Set the wallpaper >> "%WALLPAPER_PS%"
+echo     $result = [Wallpaper]::SystemParametersInfo(20, 0, '%WALLPAPER_FILE%', 3) >> "%WALLPAPER_PS%"
+echo     Write-Host "[INFO] SystemParametersInfo result: $result" >> "%WALLPAPER_PS%"
+echo     Write-Host '[SUCCESS] Wallpaper set successfully' >> "%WALLPAPER_PS%"
+echo     # Force refresh desktop >> "%WALLPAPER_PS%"
+echo     RUNDLL32.EXE user32.dll,UpdatePerUserSystemParameters >> "%WALLPAPER_PS%"
+echo     exit 0 >> "%WALLPAPER_PS%"
+echo } catch { >> "%WALLPAPER_PS%"
+echo     Write-Host '[ERROR] Failed to set wallpaper: ' $_.Exception.Message >> "%WALLPAPER_PS%"
+echo     exit 1 >> "%WALLPAPER_PS%"
+echo } >> "%WALLPAPER_PS%"
+
+:: Set wallpaper
+echo [INFO] Setting wallpaper...
+powershell -ExecutionPolicy Bypass -File "%WALLPAPER_PS%"
+
+:: Clean up
+del "%DOWNLOAD_PS%" 2>nul
+del "%WALLPAPER_PS%" 2>nul
+
+if %ERRORLEVEL% == 0 (
+    echo [SUCCESS] Wallpaper deployment completed successfully.
+    
+    :: Add final desktop refresh attempt via direct command
+    echo [INFO] Final desktop refresh...
+    rundll32.exe user32.dll,UpdatePerUserSystemParameters
+    
+    echo [SUCCESS] Process completed. Your wallpaper has been set.
+) else (
+    echo [ERROR] Failed to set wallpaper.
+    exit /b 1
+)
+
+exit /b 0
