@@ -355,7 +355,36 @@ function Get-HumanUserProfiles {
         ($excludedUsers -notcontains $username) -and 
         (-not $_.SID.StartsWith("S-1-5-18")) -and  # Local System
         (-not $_.SID.StartsWith("S-1-5-19")) -and  # Local Service
-        (-not $_.SID.StartsWith("S-1-5-20"))       # Network Service
+        (-not $_.SID.StartsWith("S-1-5-20")) -and  # Network Service
+        ($_.Path -ne $null) -and (Test-Path $_.Path)  # Ensure path exists
+    }
+    
+    # Also try another method to find user profiles (in case registry method missed some)
+    try {
+        $userFolders = Get-ChildItem "C:\Users" -Directory | 
+                      Where-Object { $excludedUsers -notcontains $_.Name }
+        
+        foreach ($folder in $userFolders) {
+            $alreadyExists = $userProfiles | Where-Object { $_.Path -eq $folder.FullName }
+            if (-not $alreadyExists) {
+                # Try to find the SID for this user
+                $sid = ""
+                try {
+                    $objUser = New-Object System.Security.Principal.NTAccount($folder.Name)
+                    $sid = $objUser.Translate([System.Security.Principal.SecurityIdentifier]).Value
+                } catch {
+                    Write-Verbose "Could not resolve SID for $($folder.Name): $_"
+                }
+                
+                # Add to profiles list
+                $userProfiles += [PSCustomObject]@{
+                    Path = $folder.FullName
+                    SID = $sid
+                }
+            }
+        }
+    } catch {
+        Write-Warning "Error finding additional user profiles: $_"
     }
     
     Write-Host "Found $($userProfiles.Count) human user profiles"
@@ -451,6 +480,24 @@ function Set-WallpaperForUser {
         & reg add "$tempKey\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d $wallpaperStyle /f | Out-Null
         & reg add "$tempKey\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d $(if ($Style -eq "Tile") {"1"} else {"0"}) /f | Out-Null
         & reg add "$tempKey\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d $ImagePath /f | Out-Null
+        
+        # Make sure wallpaper file is accessible to the user
+        try {
+            # Check if the user's AppData\Roaming\Microsoft\Windows\Themes folder exists
+            $themeFolder = Join-Path $UserProfilePath "AppData\Roaming\Microsoft\Windows\Themes"
+            if (-not (Test-Path $themeFolder)) {
+                New-Item -Path $themeFolder -ItemType Directory -Force | Out-Null
+            }
+            
+            # Copy the wallpaper file to the user's themes folder
+            $userWallpaperPath = Join-Path $themeFolder "corporate-wallpaper.jpg"
+            Copy-Item -Path $ImagePath -Destination $userWallpaperPath -Force
+            
+            # Also add this path to the registry
+            & reg add "$tempKey\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d $userWallpaperPath /f | Out-Null
+        } catch {
+            Write-Warning "Failed to copy wallpaper to user profile: $_"
+        }
         
         # Set additional registry keys to prevent wallpaper changes
         & reg add "$tempKey\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop" /v NoChangingWallPaper /t REG_DWORD /d 1 /f | Out-Null
@@ -751,10 +798,12 @@ try {
         Write-Warning "Error blocking wallpaper changes: $_"
     }
     
-    # Then set it for all human users
+    # Get and process all human user profiles
+    Write-Host "==== Processing all local user accounts ====" -ForegroundColor Yellow
     $userProfiles = @()
     try {
         $userProfiles = Get-HumanUserProfiles
+        Write-Host "Found $($userProfiles.Count) user accounts to update"
     } catch {
         Write-Warning "Error getting user profiles: $_"
     }
@@ -764,10 +813,15 @@ try {
         try {
             $profilePath = $profile.Path
             $sid = $profile.SID
+            $username = Split-Path $profilePath -Leaf
             
+            Write-Host "Processing user account: $username" -ForegroundColor Cyan
             $success = Set-WallpaperForUser -UserProfilePath $profilePath -ImagePath $wallpaperPath -Style $Style -SID $sid
             if ($success) {
                 $userSuccessCount++
+                Write-Host "Successfully updated wallpaper for user: $username" -ForegroundColor Green
+            } else {
+                Write-Warning "Failed to update wallpaper for user: $username"
             }
         } catch {
             Write-Warning "Error processing user profile $($profile.Path): $_"
@@ -776,28 +830,57 @@ try {
     
     Write-Host "Successfully set wallpaper for $userSuccessCount out of $($userProfiles.Count) user profiles."
     
-    # Setup a startup script to reapply the wallpaper when users log in
+    # Create/update refresh script to ensure wallpaper is applied at login
     try {
-        Write-Host "Creating startup script to refresh wallpaper at login..."
+        Write-Host "Creating login script to ensure wallpaper is applied for all users..."
         
-        # Create a separate PS1 file with the refresh logic
+        # Create a better refresh script that first checks if user's registry has the wallpaper set
         $refreshScriptPath = Join-Path $wallpaperDir "RefreshWallpaper.ps1"
         $refreshScriptContent = @"
 # Wallpaper refresh script
 # Created: $(Get-Date)
 
-# Wait a moment for desktop to initialize
-Start-Sleep -Seconds 5
+# Wait for desktop to initialize
+Start-Sleep -Seconds 10
 
-# Define wallpaper path
-$wallpaperPath = "$wallpaperPath"
+# Define wallpaper settings
+`$wallpaperPath = "$wallpaperPath"
+`$style = "$Style"
 
 # Make sure the wallpaper file exists
-if (Test-Path $wallpaperPath) {
-    # Force refresh desktop
-    $null = Start-Process -FilePath 'C:\Windows\System32\RUNDLL32.EXE' -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -NoNewWindow
-
-    # Use Windows API to set wallpaper
+if (Test-Path `$wallpaperPath) {
+    # Map style names to values
+    `$wallpaperStyle = switch(`$style) {
+        "Fill"    {"10"}
+        "Fit"     {"6"}
+        "Stretch" {"2"}
+        "Tile"    {"0"}
+        "Center"  {"0"}
+        "Span"    {"22"}
+        default   {"6"}  # Default to Fit
+    }
+    
+    `$tileValue = if (`$style -eq "Tile") {"1"} else {"0"}
+    
+    # Ensure user's theme directory exists
+    `$themeDir = [System.IO.Path]::Combine([Environment]::GetFolderPath('ApplicationData'), 'Microsoft', 'Windows', 'Themes')
+    if (-not (Test-Path `$themeDir)) {
+        New-Item -Path `$themeDir -ItemType Directory -Force | Out-Null
+    }
+    
+    # Copy the wallpaper to user's theme directory
+    `$userWallpaper = [System.IO.Path]::Combine(`$themeDir, 'corporate-wallpaper.jpg')
+    Copy-Item -Path `$wallpaperPath -Destination `$userWallpaper -Force
+    
+    # Update registry settings
+    New-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name WallpaperStyle -PropertyType String -Value `$wallpaperStyle -Force | Out-Null
+    New-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name TileWallpaper -PropertyType String -Value `$tileValue -Force | Out-Null
+    New-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name Wallpaper -PropertyType String -Value `$userWallpaper -Force | Out-Null
+    
+    # Force desktop refresh using multiple methods for different Windows versions
+    `$null = Start-Process -FilePath 'C:\Windows\System32\RUNDLL32.EXE' -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -NoNewWindow
+    
+    # Use Windows API to set wallpaper (most reliable method)
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -806,55 +889,57 @@ public class Wallpaper {
     public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
 }
 '@
-    [Wallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3)
-    Write-Host "Wallpaper refreshed successfully."
-} else {
-    Write-Host "Wallpaper file not found at: $wallpaperPath"
+    [Wallpaper]::SystemParametersInfo(20, 0, `$userWallpaper, 3)
 }
 "@
         
-        # Write the PowerShell script
+        # Write the refresh PowerShell script
         Set-Content -Path $refreshScriptPath -Value $refreshScriptContent -Force
         
-        # Create a simple batch file that calls the PowerShell script
-        $batchContent = @"
+        # Create a scheduled task that runs for any user at logon
+        if (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue) {
+            Write-Host "Creating/updating scheduled task to apply wallpaper at logon..."
+            $taskName = "ScogoRefreshWallpaper"
+            
+            # Remove task if it exists
+            Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+            
+            # Create a new task
+            $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$refreshScriptPath`""
+            $trigger = New-ScheduledTaskTrigger -AtLogOn
+            $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+            $principal = New-ScheduledTaskPrincipal -GroupId "Users" -RunLevel Highest
+            
+            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal
+            Write-Host "[SUCCESS] Scheduled task created to refresh wallpaper at logon"
+        } else {
+            Write-Host "Scheduled Task cmdlets not available. Creating logon script instead..."
+            
+            # Create a startup batch file
+            $batchContent = @"
 @echo off
-echo Refreshing wallpaper settings...
 powershell.exe -ExecutionPolicy Bypass -File "$refreshScriptPath"
 "@
         
-        # Write the batch file to startup folder
-        $startupDir = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
-        if (-not (Test-Path $startupDir)) {
-            New-Item -Path $startupDir -ItemType Directory -Force | Out-Null
-        }
-        
-        $startupFile = Join-Path $startupDir "RefreshWallpaper.bat"
-        Set-Content -Path $startupFile -Value $batchContent -Force
-        
-        Write-Host "[SUCCESS] Startup script created successfully"
-        
-        # For Windows 7, we need to create a scheduled task as well (startup scripts sometimes don't work reliably)
-        if ($osSettings.IsWindows7) {
-            try {
-                Write-Host "Creating scheduled task for Windows 7 compatibility..."
-                $taskName = "RefreshCorporateWallpaper"
-                $taskAction = New-ScheduledTaskAction -Execute "C:\Windows\System32\cmd.exe" -Argument "/c `"$startupFile`""
-                $taskTrigger = New-ScheduledTaskTrigger -AtLogOn
-                $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-                $taskPrincipal = New-ScheduledTaskPrincipal -GroupId "Users" -RunLevel Highest
+            # Write the batch file to startup folder and all users startup folder
+            $startupDirs = @(
+                "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp",
+                "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+            )
+            
+            foreach ($startupDir in $startupDirs) {
+                if (-not (Test-Path $startupDir)) {
+                    New-Item -Path $startupDir -ItemType Directory -Force | Out-Null
+                }
                 
-                # Remove task if it exists
-                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-                
-                # Create the task
-                Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal
-            } catch {
-                Write-Warning "Error creating scheduled task: $_"
+                $startupFile = Join-Path $startupDir "RefreshWallpaper.bat"
+                Set-Content -Path $startupFile -Value $batchContent -Force
             }
+            
+            Write-Host "[SUCCESS] Startup scripts created successfully"
         }
     } catch {
-        Write-Warning "Error creating startup script: $_"
+        Write-Warning "Error creating refresh mechanism: $_"
     }
     
     # Refresh desktop to apply changes immediately
