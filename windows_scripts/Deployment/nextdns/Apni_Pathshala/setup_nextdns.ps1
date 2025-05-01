@@ -15,6 +15,9 @@
 
 #Requires -RunAsAdministrator
 
+# Add System.Web assembly for URL encoding
+Add-Type -AssemblyName System.Web
+
 # Variables
 $Url             = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe'
 $InstallDir      = 'C:\Program Files\cloudflared'
@@ -32,7 +35,7 @@ $VerboseLogFile  = "$LogDir\cloudflared_verbose.log"
 $ServiceName     = 'Cloudflared'
 # The service display name appears to be "Cloudflared agent"
 $ServiceDisplayName = 'Cloudflared agent'
-$DoHUrl          = 'https://dns.nextdns.io/d6849a'
+$DoHUrl          = 'https://dns.nextdns.io/d6849a/' + [System.Web.HttpUtility]::UrlEncode($env:COMPUTERNAME)
 # Flag to check if we need to use netsh fallback for IPv6 configuration
 $UseNetshFallback = $false
 
