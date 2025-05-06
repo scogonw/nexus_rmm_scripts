@@ -1,0 +1,101 @@
+Script Name,Usage,Category,Subcategory
+# System Management Scripts
+system_health.bat,Batch script to check and report system health status.,System,System Maintenance
+system_health.ps1,PowerShell script for detailed system health monitoring and reporting.,System,System Maintenance
+find_large_files.bat,Batch script to locate large files on the system.,System,System Maintenance
+find_large_files.ps1,PowerShell script to search and identify large files across the system.,System,System Maintenance
+run_cleanup.bat,Batch file to launch the temporary files cleanup script with administrator privileges.,System,System Maintenance
+temporary_files_cleanup.ps1,PowerShell script to automate cleanup of temporary files to improve system performance.,System,System Maintenance
+windows_debloater.bat,Batch script to remove unnecessary Windows components and bloatware.,System,System Maintenance
+windows_debloater.ps1,PowerShell script to safely remove Windows bloatware and unnecessary components.,System,System Maintenance
+
+# Network Management
+network_troubleshoot.bat,Batch script to diagnose and fix common network issues.,System,Network Management
+network_troubleshoot.ps1,PowerShell script for comprehensive network diagnostics and troubleshooting.,System,Network Management
+Airplanemode.bat,Batch file launcher for toggling Airplane Mode on Windows systems.,System,Network Management
+Airplanemode.ps1,PowerShell script that handles toggling Airplane Mode by enabling or disabling network adapters.,System,Network Management
+
+# Application Management
+set_default_apps.bat,Batch script to set default applications for various file types and protocols.,System,Application Management
+set_default_apps.ps1,PowerShell script to configure default applications for different file types and protocols.,System,Application Management
+search_install_apps.bat,Batch script to search and install applications from various sources.,System,Application Management
+search_install_apps.ps1,PowerShell script to search and install applications with automated dependency handling.,System,Application Management
+
+# System Troubleshooting
+restart_explorer.bat,Batch script to restart Windows Explorer process.,System,System Troubleshooting
+restart_explorer.ps1,PowerShell script to safely restart the Windows Explorer process.,System,System Troubleshooting
+windows_update_troubleshoot.bat,Batch script to diagnose and fix Windows Update issues.,System,System Troubleshooting
+windows_update_troubleshoot.ps1,PowerShell script for comprehensive Windows Update troubleshooting and repair.,System,System Troubleshooting
+
+# Security Scripts
+# Firewall Management
+addfirewall.bat,Launches the PowerShell script to add firewall rules for executables with administrator privileges.,Security,Firewall Management
+addfirewall.ps1,Adds firewall rules for all executables in a specified directory. Requires administrator privileges.,Security,Firewall Management
+
+# Security Checks and Audits
+check.ps1,PowerShell script to check various Windows security settings and configurations.,Security,Security Checks and Audits
+run_security_check.bat,Batch script to run the Windows security check tool.,Security,Security Checks and Audits
+security_audit.bat,Batch script to perform comprehensive security audits.,Security,Security Checks and Audits
+security_audit.ps1,PowerShell script for detailed security auditing and compliance checking.,Security,Security Checks and Audits
+Additional_Security_Investigation.bat,Batch script to run additional security investigation.,Security,Security Checks and Audits
+Additional_Security_Investigation.ps1,PowerShell script to perform additional security investigation.,Security,Security Checks and Audits
+Investigate-Windows-PC.bat,Batch script to investigate Windows PC security.,Security,Security Checks and Audits
+Investigate-Windows-PC.ps1,PowerShell script to investigate Windows PC security.,Security,Security Checks and Audits
+
+# Threat Detection and Scanning
+threat_detection.bat,Batch script to detect potential security threats.,Security,Threat Detection and Scanning
+threat_detection.ps1,PowerShell script for advanced threat detection and analysis.,Security,Threat Detection and Scanning
+security_scan.bat,Batch script to perform system-wide security scanning.,Security,Threat Detection and Scanning
+security_scan.ps1,PowerShell script for comprehensive security scanning and vulnerability assessment.,Security,Threat Detection and Scanning
+
+# Updates and Patches
+winUpdate.bat,Batch script to check for and install Windows updates.,Security,Updates and Patches
+winUpdate.ps1,PowerShell script to check for and install Windows updates.,Security,Updates and Patches
+security_patches.bat,Batch script to check and apply security patches.,Security,Updates and Patches
+security_patches.ps1,PowerShell script to manage and apply security patches across the system.,Security,Updates and Patches
+
+# Customization Scripts
+# Theme and Appearance
+SetLightMode.bat,Batch script to set Windows to light mode.,Customization,Theme and Appearance
+SetDarkMode.bat,Batch script to set Windows to dark mode.,Customization,Theme and Appearance
+Set-WindowsTheme.ps1,PowerShell script to switch between dark and light mode.,Customization,Theme and Appearance
+DisableTransparency.bat,Batch script to disable transparency effects on Windows.,Customization,Theme and Appearance
+EnableTransparency.bat,Batch script to enable transparency effects on Windows.,Customization,Theme and Appearance
+Set-TransparencyEffects.ps1,PowerShell script to toggle transparency effects on Windows.,Customization,Theme and Appearance
+
+# Wallpaper Management
+SetWallpaper.bat,Batch script to set the desktop wallpaper.,Customization,Wallpaper Management
+Set-Wallpaper.ps1,PowerShell script to change the desktop wallpaper.,Customization,Wallpaper Management
+run_wallpaper.bat,Batch script to download and set a corporate wallpaper across all Windows workstations.,Customization,Wallpaper Management
+set_wallpaper.ps1,PowerShell script to download and set a corporate wallpaper across all Windows workstations.,Customization,Wallpaper Management
+allow_changing_wallpaper.ps1,PowerShell script to allow users to change the wallpaper.,Customization,Wallpaper Management
+run_allow_changing_wallpaper.bat,Batch script to allow users to change the wallpaper.,Customization,Wallpaper Management
+
+# All-in-One Customization
+WindowsCustomizer.bat,Batch script for an all-in-one menu to customize Windows appearance.,Customization,All-in-One Customization
+WindowsCustomizer.ps1,PowerShell script for an all-in-one menu to customize Windows appearance.,Customization,All-in-One Customization
+
+# User Management Scripts
+create_user_windows.bat,Batch script to create a local user account with specified username and optional administrator privileges.,User Management,User Account Management
+create_user_windows.ps1,PowerShell script to create a local user account with specified username and optional administrator privileges.,User Management,User Account Management
+
+# Linux Integration Scripts
+linux_scripts.bat,Batch script to run Linux-compatible commands and scripts on Windows.,Linux Integration,Linux Compatibility
+linux_scripts.ps1,PowerShell script to execute Linux commands and scripts on Windows systems.,Linux Integration,Linux Compatibility
+
+# Linux Scripts
+# Linux User Management
+create_user_linux.sh,Shell script to create and manage Linux user accounts with specified permissions and configurations.,Linux,User Management
+
+# Linux Application Management
+app_store_manager.sh,Shell script to manage Linux package repositories, install, update, and remove applications.,Linux,Application Management
+
+# Linux Customization
+allow_changing_wallpaper.sh,Shell script to manage wallpaper permissions and settings on Linux systems.,Linux,Customization
+set_enforce_wallpaper.sh,Shell script to set and enforce corporate wallpaper policies on Linux workstations.,Linux,Customization
+
+# Linux Network Management
+change_dns_server.sh,Shell script to configure and manage DNS server settings on Linux systems.,Linux,Network Management
+
+# Linux Browser Management
+browser_extension_manager.sh,Shell script to manage browser extensions and settings across different Linux browsers.,Linux,Browser Management 
